@@ -104,7 +104,11 @@ export default {
   // ================= 3. RAG 知识库接口 =================
   uploadKnowledge: (filePath) => uploadFile("/knowledge/upload", filePath),
 
-  // ================= 4. 管理员后台接口 =================
+  // ================= 4. 品牌视觉生成接口 =================
+  generateVisual: (data) => request("/visual/generate", { method: 'POST', data }),
+  getVisualStatus: (visualId) => request(`/visual/${visualId}`, { method: 'GET' }),
+
+  // ================= 5. 管理员后台接口 =================
   getAdminUsers: (page = 1, pageSize = 20) => request(`/admin/users?page=${page}&page_size=${pageSize}`, { method: 'GET' }),
   checkAdminAccess: () => request("/admin/users?page=1&page_size=1", { method: 'GET', silent: true }),
   toggleUserBan: (userId) => request(`/admin/users/${userId}/ban`, { method: 'PUT' }),
