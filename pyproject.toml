@@ -9,6 +9,7 @@ dependencies = [
     "cryptography<48.0.0",
     "fastapi-mail>=1.6.4",
     "fastapi[standard]>=0.136.1",
+    "httpx>=0.28.1",
     "itsdangerous>=2.2.0",
     "langchain==1.1.0",
     "langchain-chroma>=1.1.0",
