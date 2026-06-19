@@ -33,6 +33,12 @@ class AppSettings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRES_MINUTES: int = 15
     JWT_REFRESH_TOKEN_EXPIRES_DAYS: int = 30
 
+    AIGC_API_BASE_URL: str = ""
+    AIGC_API_KEY: str = ""
+    AIGC_SUBMIT_PATH: str = "/submit"
+    AIGC_FETCH_PATH_TEMPLATE: str = "/task/{task_id}"
+    AIGC_TIMEOUT_SECONDS: int = 10
+
 
 _settings = AppSettings()
 
@@ -54,3 +60,9 @@ MAIL_SSL_TLS = _settings.MAIL_SSL_TLS
 JWT_SECRET_KEY = _settings.JWT_SECRET_KEY
 JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=_settings.JWT_ACCESS_TOKEN_EXPIRES_MINUTES)
 JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=_settings.JWT_REFRESH_TOKEN_EXPIRES_DAYS)
+
+AIGC_API_BASE_URL = _settings.AIGC_API_BASE_URL
+AIGC_API_KEY = _settings.AIGC_API_KEY
+AIGC_SUBMIT_PATH = _settings.AIGC_SUBMIT_PATH
+AIGC_FETCH_PATH_TEMPLATE = _settings.AIGC_FETCH_PATH_TEMPLATE
+AIGC_TIMEOUT_SECONDS = _settings.AIGC_TIMEOUT_SECONDS

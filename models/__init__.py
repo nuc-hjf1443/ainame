@@ -45,4 +45,4 @@ class Base(DeclarativeBase):
     )
 
 
-from . import ai_asset, audit, finance, user
+from . import ai_asset, audit, finance, user, visual
