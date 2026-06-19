@@ -57,6 +57,13 @@
             placeholder="视觉风格，如：现代极简商业风"
             @input="updateVisualStyle(index, $event.detail.value)"
           />
+          <picker
+            mode="selector"
+            :range="visualModelOptions"
+            @change="updateVisualModel(index, visualModelOptions[$event.detail.value])"
+          >
+            <view class="visual-model-picker">图像模型：{{ getVisualState(index).imageModel }}</view>
+          </picker>
           <view class="visual-actions">
             <button
               size="mini"
@@ -81,6 +88,7 @@
           <view v-if="getVisualState(index).slogan || getVisualState(index).status" class="visual-result">
             <view v-if="getVisualState(index).slogan" class="visual-slogan">“{{ getVisualState(index).slogan }}”</view>
             <view class="visual-status">状态：{{ getVisualState(index).status || 'PENDING' }}</view>
+            <view class="visual-status">模型：{{ getVisualState(index).imageModel }}</view>
             <image
               v-if="getVisualState(index).imageUrl"
               class="visual-image"
@@ -132,6 +140,8 @@ const token = ref(uni.getStorageSync('token'));
 const user = ref(uni.getStorageSync('user') || {});
 const isAdmin = ref(String(user.value.role || '').trim().toUpperCase() === 'ADMIN');
 const defaultVisualStyle = '现代极简商业风';
+const defaultVisualModel = 'wan2.6-image';
+const visualModelOptions = ['wan2.6-image'];
 const visualPollInterval = 5000;
 const visualMaxPolls = 12;
 const visualStates = ref({});
@@ -140,6 +150,7 @@ const visualPollCounts = {};
 
 const createVisualState = () => ({
   designStyle: defaultVisualStyle,
+  imageModel: defaultVisualModel,
   visualId: null,
   slogan: '',
   status: '',
@@ -164,6 +175,10 @@ const setVisualState = (index, patch) => {
 
 const updateVisualStyle = (index, value) => {
   setVisualState(index, { designStyle: value });
+};
+
+const updateVisualModel = (index, value) => {
+  setVisualState(index, { imageModel: value || defaultVisualModel });
 };
 
 const clearVisualTimer = (index) => {
@@ -193,6 +208,7 @@ const applyVisualResponse = (index, res) => {
     slogan: res.slogan || getVisualState(index).slogan,
     status: res.status || getVisualState(index).status,
     imageUrl: res.image_url || '',
+    imageModel: res.image_model || getVisualState(index).imageModel,
     error: ''
   });
 };
@@ -321,9 +337,11 @@ const handleGenerateVisual = async (item, index) => {
   }
 
   const designStyle = getVisualState(index).designStyle.trim() || defaultVisualStyle;
+  const imageModel = getVisualState(index).imageModel || defaultVisualModel;
   clearVisualTimer(index);
   setVisualState(index, {
     designStyle,
+    imageModel,
     loading: true,
     error: '',
     status: '',
@@ -337,7 +355,8 @@ const handleGenerateVisual = async (item, index) => {
       name: item.name,
       moral: item.moral || '',
       category: formData.value.category,
-      design_style: designStyle
+      design_style: designStyle,
+      image_model: imageModel
     });
     applyVisualResponse(index, res);
 
@@ -429,6 +448,7 @@ onUnload(() => {
 .visual-box { margin-top: 24rpx; padding-top: 24rpx; border-top: 1px solid #eef2f7; }
 .visual-title { font-size: 28rpx; font-weight: bold; color: #1f2937; margin-bottom: 14rpx; }
 .visual-style-input { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8rpx; padding: 18rpx 20rpx; font-size: 26rpx; box-sizing: border-box; }
+.visual-model-picker { margin-top: 14rpx; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8rpx; padding: 18rpx 20rpx; font-size: 26rpx; color: #334155; box-sizing: border-box; }
 .visual-actions { display: flex; gap: 16rpx; margin-top: 16rpx; align-items: center; flex-wrap: wrap; }
 .visual-btn { background: #0f766e; color: #fff; }
 .visual-refresh-btn { background: #fff; color: #0f766e; border: 1px solid #99f6e4; }

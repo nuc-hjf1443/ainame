@@ -12,8 +12,9 @@ def _fallback_slogan_prompt(data: VisualGenerateIn) -> SloganAndPromptSchema:
     prompt = (
         f"Brand logo and business card concept for '{data.name}', "
         f"meaning: {data.moral or 'elegant brand identity'}, "
-        f"style: {data.design_style}, clean commercial visual identity, "
-        "premium typography, balanced composition, professional mockup, --v 6.0 --ar 16:9"
+        f"style: {data.design_style}, image model: {data.image_model}, clean commercial visual identity, "
+        "premium typography, balanced square composition, professional mockup, "
+        "1:1 aspect ratio, no watermark, no model-specific command parameters"
     )
     return SloganAndPromptSchema(slogan=slogan[:15], mj_prompt=prompt)
 
@@ -31,9 +32,10 @@ async def generate_slogan_and_prompt(data: VisualGenerateIn) -> SloganAndPromptS
     prompt = f"""
 你是一个顶尖的品牌策划师和UI/UX视觉设计师。现在客户选定了一个名字：{data.name}，其寓意是：{data.moral}。
 客户期望的设计风格是：{data.design_style}。
+客户选择的图像生成模型是：{data.image_model}。
 请结构化输出以下两项内容：
 1. slogan：一句简短、押韵、有记忆点的品牌口号（限15字内）。
-2. mj_prompt：一段用于Midjourney生成品牌Logo和名片概念图的高质量英文提示词。包含视觉主体、色彩搭配、风格描述和渲染参数（如 --v 6.0 --ar 16:9）。
+2. mj_prompt：一段用于 wan2.6-image 生成品牌Logo和名片概念图的高质量英文提示词。包含视觉主体、色彩搭配、风格描述，并明确使用1:1方形构图。不要包含 --v、--ar 等模型命令参数。
 """
     try:
         return await structured_llm.ainvoke(prompt)
@@ -54,6 +56,7 @@ async def create_brand_visual(
         category=data.category,
         moral=data.moral,
         design_style=data.design_style,
+        image_model=data.image_model,
         slogan=slogan_prompt.slogan,
         prompt_used=slogan_prompt.mj_prompt,
         status="PENDING",
@@ -61,7 +64,7 @@ async def create_brand_visual(
     visual = await repository.create_visual(visual)
 
     try:
-        task = await submit_visual_task(slogan_prompt.mj_prompt)
+        task = await submit_visual_task(slogan_prompt.mj_prompt, data.image_model)
     except Exception:
         return await repository.update_visual_status(visual, status="FAILED")
 

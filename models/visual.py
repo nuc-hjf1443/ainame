@@ -16,6 +16,7 @@ class BrandVisual(Base):
     category: Mapped[str] = mapped_column(String(50))
     moral: Mapped[str | None] = mapped_column(Text, nullable=True)
     design_style: Mapped[str] = mapped_column(String(100), default="现代极简商业风", server_default="现代极简商业风")
+    image_model: Mapped[str] = mapped_column(String(100), default="wan2.6-image", server_default="wan2.6-image")
     slogan: Mapped[str | None] = mapped_column(String(255), nullable=True)
     prompt_used: Mapped[str | None] = mapped_column(Text, nullable=True)
     task_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)

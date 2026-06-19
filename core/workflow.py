@@ -1,4 +1,5 @@
 import asyncio
+import json
 import uuid
 from typing import TypedDict, List, Dict, Any, Literal
 from langgraph.graph import StateGraph, END
@@ -33,7 +34,35 @@ llm = ChatDeepSeek(
 )
 
 # 告诉大模型，输出的格式是怎么的
-structured_llm = llm.with_structured_output(NameResultSchema).with_retry(stop_after_attempt=3)
+structured_llm = llm.with_structured_output(NameResultSchema, method="json_mode")
+NAMING_OUTPUT_SCHEMA = json.dumps(NameResultSchema.model_json_schema(), ensure_ascii=False)
+
+
+async def invoke_naming_model(prompt: str, max_attempts: int = 3) -> NameResultSchema:
+    """Invoke the naming model and reject empty structured responses."""
+    last_error: Exception | None = None
+    structured_prompt = (
+        f"{prompt}\n\n"
+        "请只返回符合以下 JSON Schema 的 JSON，不要输出 Markdown 或其他说明：\n"
+        f"{NAMING_OUTPUT_SCHEMA}"
+    )
+
+    for attempt in range(max_attempts):
+        try:
+            response = await structured_llm.ainvoke(structured_prompt)
+            if response is None:
+                raise ValueError("大模型未返回结构化起名结果")
+
+            result = NameResultSchema.model_validate(response)
+            if not result.names:
+                raise ValueError("大模型返回的候选名字为空")
+            return result
+        except Exception as exc:
+            last_error = exc
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(0.5 * (attempt + 1))
+
+    raise RuntimeError("大模型连续多次未返回有效的起名结果，请稍后重试") from last_error
 
 
 # 定义工作流的节点  这是一个工作流的入口，负责转发任务
@@ -52,7 +81,7 @@ async def human_naming_node(state: WorkFlowState):
         【避讳排除字】: {'、'.join(state['exclude'])}
         原则：平仄协调，优先从《诗经》《楚辞》或唐诗宋词中汲取灵感。请给出 5 个候选方案。"""
 
-    response = await  structured_llm.ainvoke(prompt)
+    response = await invoke_naming_model(prompt)
     return {"final_output": response.model_dump()}
 
 
@@ -78,7 +107,7 @@ async def company_naming_node(state: WorkFlowState):
 
      原则：易于传播、符合行业调性，具备良好的商业愿景。请给出 5 个候选方案。"""
 
-    response = await structured_llm.ainvoke(prompt)
+    response = await invoke_naming_model(prompt)
     memory_list = [f"【{n.name}】寓意：{n.moral}" for n in response.names]
     names_str = "\n".join(memory_list)
 
@@ -102,7 +131,7 @@ async def pet_naming_node(state: WorkFlowState) -> Dict[str, Any]:
     【避讳排除字】: {'、'.join(state['exclude'])}
 
     原则：亲切好记、富有画面感或软萌感。请给出 5 个候选方案。"""
-    response = await structured_llm.ainvoke(prompt)
+    response = await invoke_naming_model(prompt)
     return {"final_output": response.model_dump()}
 
 

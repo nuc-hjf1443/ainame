@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 VisualCategory = Literal["人名", "企业名", "宠物名"]
 VisualStatus = Literal["PENDING", "PROCESSING", "SUCCESS", "FAILED"]
+VisualImageModel = Literal["wan2.6-image"]
 
 
 class VisualGenerateIn(BaseModel):
@@ -13,6 +14,7 @@ class VisualGenerateIn(BaseModel):
     moral: str = Field("", max_length=2000, description="名字的寓意")
     category: VisualCategory = Field(..., description="分类")
     design_style: str = Field(default="现代极简商业风", max_length=100, description="期望的视觉设计风格")
+    image_model: VisualImageModel = Field(default="wan2.6-image", description="图像生成模型")
 
 
 class VisualGenerateOut(BaseModel):
@@ -20,6 +22,8 @@ class VisualGenerateOut(BaseModel):
     task_id: str = Field(..., description="第三方绘画任务ID")
     slogan: str = Field(..., description="AI生成的品牌Slogan")
     status: VisualStatus = Field(..., description="当前状态")
+    image_url: str | None = Field(default=None, description="生成图片地址")
+    image_model: str = Field(..., description="图像生成模型")
 
 
 class VisualStatusOut(BaseModel):
@@ -27,6 +31,7 @@ class VisualStatusOut(BaseModel):
     status: VisualStatus
     image_url: str | None = None
     slogan: str | None = None
+    image_model: str | None = None
 
 
 class SloganAndPromptSchema(BaseModel):
