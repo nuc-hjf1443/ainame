@@ -17,6 +17,12 @@
 			"style": {
 				"navigationBarTitleText": ""
 			}
+		},
+		{
+			"path": "pages/admin/index",
+			"style": {
+				"navigationBarTitleText": "管理员后台"
+			}
 		}
 	],
 	"globalStyle": {

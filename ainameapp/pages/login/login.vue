@@ -15,6 +15,20 @@ import http from '@/http/http.js';
 const form = ref({ email: '', password: '' });
 const loading = ref(false);
 
+const isAdminRole = (user) => String(user?.role || '').trim().toUpperCase() === 'ADMIN';
+
+const resolveNextUrl = async (user) => {
+  if (isAdminRole(user)) return '/pages/admin/index';
+
+  try {
+    await http.checkAdminAccess();
+    uni.setStorageSync('user', { ...user, role: 'ADMIN' });
+    return '/pages/admin/index';
+  } catch (e) {
+    return '/pages/index/index';
+  }
+};
+
 const handleLogin = async () => {
   if (!form.value.email || !form.value.password) return uni.showToast({ title: '请填写完整', icon: 'none' });
   loading.value = true;
@@ -22,8 +36,9 @@ const handleLogin = async () => {
     const res = await http.login(form.value);
     uni.setStorageSync('token', res.token);
     uni.setStorageSync('user', res.user);
+    const nextUrl = await resolveNextUrl(res.user);
     uni.showToast({ title: '登录成功' });
-    setTimeout(() => uni.reLaunch({ url: '/pages/index/index' }), 1000); // 假设index是tab页，如果不是用redirectTo
+    setTimeout(() => uni.reLaunch({ url: nextUrl }), 1000);
   } catch (e) {
     console.error(e);
   } finally {
