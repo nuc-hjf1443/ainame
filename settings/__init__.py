@@ -38,6 +38,8 @@ class AppSettings(BaseSettings):
     AIGC_SUBMIT_PATH: str = "/submit"
     AIGC_FETCH_PATH_TEMPLATE: str = "/task/{task_id}"
     AIGC_TIMEOUT_SECONDS: int = 10
+    AIGC_WAN_IMAGE_URL: str = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+    AIGC_GENERATION_TIMEOUT_SECONDS: int = 180
 
 
 _settings = AppSettings()
@@ -66,3 +68,5 @@ AIGC_API_KEY = _settings.AIGC_API_KEY
 AIGC_SUBMIT_PATH = _settings.AIGC_SUBMIT_PATH
 AIGC_FETCH_PATH_TEMPLATE = _settings.AIGC_FETCH_PATH_TEMPLATE
 AIGC_TIMEOUT_SECONDS = _settings.AIGC_TIMEOUT_SECONDS
+AIGC_WAN_IMAGE_URL = _settings.AIGC_WAN_IMAGE_URL
+AIGC_GENERATION_TIMEOUT_SECONDS = _settings.AIGC_GENERATION_TIMEOUT_SECONDS

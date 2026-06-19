@@ -26,6 +26,8 @@ async def generate_visual(
         task_id=visual.task_id or "",
         slogan=visual.slogan or "",
         status=visual.status,
+        image_url=visual.image_url,
+        image_model=visual.image_model,
     )
 
 
@@ -46,4 +48,5 @@ async def get_visual_status(
         status=visual.status,
         image_url=visual.image_url,
         slogan=visual.slogan,
+        image_model=visual.image_model,
     )
