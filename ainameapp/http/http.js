@@ -1,14 +1,15 @@
 // http/http.js
 
 // 动态获取环境：开发模式连接本地后端，发行模式连接线上域名
-const BASE_URL = "http://192.168.150.29:8000";
+const BASE_URL = "http://127.0.0.1:8000";
 
 /**
  * 核心请求封装函数
  */
-const request = (url, options) => {
+const request = (url, options = {}) => {
   // 每次请求前，动态获取最新的 token
   const token = uni.getStorageSync("token");
+  const { silent = false, ...requestOptions } = options;
   
   return new Promise((resolve, reject) => {
     uni.request({
@@ -17,7 +18,7 @@ const request = (url, options) => {
         "content-type": "application/json",
         "authorization": token ? "Bearer " + token : ""
       },
-      ...options,
+      ...requestOptions,
       success: (res) => {
         // HTTP 状态码 200 代表完全成功
         if (res.statusCode === 200) {
@@ -36,18 +37,22 @@ const request = (url, options) => {
           }
           
           // 确保 title 绝对是字符串，防止前端崩溃红屏
-          uni.showToast({ 
-            title: String(errorMsg), 
-            icon: 'none', 
-            duration: 3000 
-          });
+          if (!silent) {
+            uni.showToast({
+              title: String(errorMsg),
+              icon: 'none',
+              duration: 3000
+            });
+          }
           
           // 将错误抛出，供业务层 catch 处理（比如用来关掉 loading 动画）
           reject(res.data);
         }
       },
       fail: (err) => {
-        uni.showToast({ title: '网络连接断开，请检查网络', icon: 'none' });
+        if (!silent) {
+          uni.showToast({ title: '网络连接断开，请检查网络', icon: 'none' });
+        }
         reject(err);
       }
     });
@@ -97,5 +102,16 @@ export default {
   feedbackName: (data) => request("/names/feedback", { method: 'POST', data }), // 多轮微调 (带记忆 thread_id)
   
   // ================= 3. RAG 知识库接口 =================
-  uploadKnowledge: (filePath) => uploadFile("/knowledge/upload", filePath)
+  uploadKnowledge: (filePath) => uploadFile("/knowledge/upload", filePath),
+
+  // ================= 4. 管理员后台接口 =================
+  getAdminUsers: (page = 1, pageSize = 20) => request(`/admin/users?page=${page}&page_size=${pageSize}`, { method: 'GET' }),
+  checkAdminAccess: () => request("/admin/users?page=1&page_size=1", { method: 'GET', silent: true }),
+  toggleUserBan: (userId) => request(`/admin/users/${userId}/ban`, { method: 'PUT' }),
+  getAdminOrders: (page = 1, pageSize = 20) => request(`/admin/finance/orders?page=${page}&page_size=${pageSize}`, { method: 'GET' }),
+  reviewRefund: (refundId, data) => request(`/admin/finance/refunds/${refundId}`, { method: 'PUT', data }),
+  getAdminAgents: () => request("/admin/ai/agents", { method: 'GET' }),
+  updateAdminAgent: (agentId, data) => request(`/admin/ai/agents/${agentId}`, { method: 'PUT', data }),
+  upsertKnowledge: (data) => request("/admin/ai/knowledge", { method: 'POST', data }),
+  getSensitiveLogs: (page = 1, pageSize = 20) => request(`/admin/audit/sensitive?page=${page}&page_size=${pageSize}`, { method: 'GET' })
 };

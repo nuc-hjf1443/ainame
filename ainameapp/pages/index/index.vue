@@ -1,5 +1,13 @@
 <template>
   <view class="container">
+    <view class="account-bar" v-if="token">
+      <view class="account-text">{{ user.email || user.username || '已登录用户' }}</view>
+      <view class="account-actions">
+        <button v-if="isAdmin" size="mini" class="admin-btn" @click="goAdmin">管理员后台</button>
+        <button size="mini" class="logout-btn" @click="logout">退出登录</button>
+      </view>
+    </view>
+
     <view class="tabs">
       <view v-for="item in categories" :key="item" 
             :class="['tab', formData.category === item ? 'active' : '']" 
@@ -72,12 +80,23 @@ const loading = ref(false);
 const names = ref([]);
 const threadId = ref(''); // 核心：保存上下文记忆的ID
 const feedbackText = ref('');
+const token = ref(uni.getStorageSync('token'));
+const user = ref(uni.getStorageSync('user') || {});
+const isAdmin = ref(String(user.value.role || '').trim().toUpperCase() === 'ADMIN');
 
 // --- 方法定义 ---
 const switchCategory = (cat) => {
   formData.value.category = cat;
   names.value = []; // 切换场景清空历史
   threadId.value = '';
+};
+
+const goAdmin = () => uni.reLaunch({ url: '/pages/admin/index' });
+
+const logout = () => {
+  uni.removeStorageSync('token');
+  uni.removeStorageSync('user');
+  uni.reLaunch({ url: '/pages/login/login' });
 };
 
 // 上传专属知识库 (RAG)
@@ -161,6 +180,11 @@ const handleFeedback = async () => {
 
 <style scoped>
 .container { padding: 30rpx; background-color: #f5f7fa; min-height: 100vh; }
+.account-bar { display: flex; align-items: center; justify-content: space-between; gap: 20rpx; background: #fff; padding: 18rpx 20rpx; border-radius: 12rpx; margin-bottom: 24rpx; }
+.account-text { font-size: 24rpx; color: #475569; min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-actions { display: flex; gap: 12rpx; flex-shrink: 0; }
+.admin-btn { background: #2563eb; color: #fff; }
+.logout-btn { background: #fff; color: #64748b; border: 1px solid #cbd5e1; }
 /* Tabs 样式 */
 .tabs { display: flex; justify-content: space-around; background: #fff; padding: 20rpx; border-radius: 16rpx; margin-bottom: 30rpx; }
 .tab { font-size: 30rpx; color: #666; padding: 10rpx 30rpx; }
