@@ -15,12 +15,13 @@ from core.redisconfig import get_redis_client
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+
 # 发送验证码给用户
 
 @router.get("/code")
 async def get_email_code(email: Annotated[EmailStr, Query(...)],
-                         fastmail:FastMail=Depends(get_email),
-                         session:AsyncSession=Depends(get_session),
+                         fastmail: FastMail = Depends(get_email),
+                         session: AsyncSession = Depends(get_session),
                          redis: Redis = Depends(get_redis_client)):
     # 1. 生成验证码
     source = string.digits * 4
@@ -49,7 +50,7 @@ from schemas.user_schemas import RegisterIn, UserCreateSchema, LoginIn
 # 功能：用户注册。向用户表插入一条数据
 # 后台要接收用户的信息。设计对象来接收，把接收对象转成数据库对象，存入数据库
 @router.post("/register")
-async def register(userinfo: RegisterIn, session: AsyncSession=Depends(get_session),
+async def register(userinfo: RegisterIn, session: AsyncSession = Depends(get_session),
                    redis: Redis = Depends(get_redis_client)):
     # 向用户表中插入数据
     userRepository = UserRepository(session=session)
@@ -61,7 +62,7 @@ async def register(userinfo: RegisterIn, session: AsyncSession=Depends(get_sessi
     # emailCodeRepository = EmailCodeRepository(session=session)
     # email_code_bool = await emailCodeRepository.check_email_code(userinfo.email, userinfo.code)
     # key是email
-    email_code= await redis.get(userinfo.email)
+    email_code = await redis.get(userinfo.email)
     if (not email_code) or (userinfo.code != email_code):
         raise HTTPException(400, detail="验证码错误或者已经过期")
 
@@ -74,13 +75,16 @@ async def register(userinfo: RegisterIn, session: AsyncSession=Depends(get_sessi
 
 from core.auth import AuthHandler
 from schemas.user_schemas import LoginOut
+
 authHandler = AuthHandler()
+
+
 @router.post("/login", response_model=LoginOut)
-async def login(userinfo:LoginIn, session:AsyncSession=Depends(get_session)):
+async def login(userinfo: LoginIn, session: AsyncSession = Depends(get_session)):
     # 获取信息，邮箱，根据邮箱才能知道你是不是我们的会员
     # 1. 确定是已经注册用户
     userRepository = UserRepository(session=session)
-    user:User|None = await userRepository.get_user_by_email(userinfo.email)
+    user: User | None = await userRepository.get_user_by_email(userinfo.email)
     if not user:
         raise HTTPException(status_code=400, detail="该用户不存在！")
     if user.is_banned:
