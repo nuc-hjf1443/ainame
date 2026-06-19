@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from pydantic import BaseModel, EmailStr, Field, model_validator, ValidationError
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator, ValidationError
 
 RawPasswordStr = Annotated[str, Field(..., min_length=3, max_length=50)]
 RawUserNameStr = Annotated[str, Field(..., min_length=3, max_length=50)]
@@ -36,9 +36,13 @@ class LoginIn(BaseModel):
 
 
 class UserSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id:Annotated[int,Field(...)]
     username:RawUserNameStr
     email:EmailStr
+    role: str = "C_END"
+    is_banned: bool = False
 
 
 class LoginOut(BaseModel):
