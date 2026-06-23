@@ -87,6 +87,8 @@ async def login(userinfo: LoginIn, session: AsyncSession = Depends(get_session))
     user: User | None = await userRepository.get_user_by_email(userinfo.email)
     if not user:
         raise HTTPException(status_code=400, detail="该用户不存在！")
+    if user.is_deleted:
+        raise HTTPException(status_code=403, detail="账号已注销")
     if user.is_banned:
         raise HTTPException(status_code=403, detail="账号已被封禁，请联系管理员")
     # 2. 看密码是否正确

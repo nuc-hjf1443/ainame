@@ -1,6 +1,7 @@
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 VisualCategory = Literal["人名", "企业名", "宠物名"]
@@ -37,3 +38,39 @@ class VisualStatusOut(BaseModel):
 class SloganAndPromptSchema(BaseModel):
     slogan: str = Field(..., description="一句简短、押韵、有记忆点的中文品牌口号，15字以内")
     mj_prompt: str = Field(..., description="用于图像生成的英文品牌视觉提示词")
+
+
+class BrandKitCreateIn(BaseModel):
+    thread_id: str = Field(..., min_length=1, max_length=100)
+    name: str = Field(..., min_length=1, max_length=100)
+    moral: str = Field(default="", max_length=2000)
+    category: Literal["企业名"] = "企业名"
+    industry: str = Field(..., min_length=2, max_length=200)
+    audience: str = Field(..., min_length=2, max_length=200)
+    design_style: str = Field(default="现代简约", min_length=2, max_length=100)
+    primary_color: str = Field(default="蓝色", min_length=1, max_length=50)
+    image_model: VisualImageModel = "wan2.6-image"
+
+
+class BrandKitAssetOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    asset_type: str
+    variant_index: int
+    status: VisualStatus
+    image_url: str | None
+    error_message: str | None
+
+
+class BrandKitOut(BaseModel):
+    id: int
+    name: str
+    moral: str | None
+    industry: str
+    audience: str
+    design_style: str
+    primary_color: str
+    slogan: str
+    status: VisualStatus
+    assets: list[BrandKitAssetOut]
+    created_time: datetime

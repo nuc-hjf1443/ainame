@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Integer, String, DateTime
+from sqlalchemy import Boolean, Integer, String, DateTime, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 from pwdlib import PasswordHash
 
@@ -19,6 +19,9 @@ class User(Base):
     _password:Mapped[str] = mapped_column(String(200))
     role: Mapped[str] = mapped_column(String(20), default="C_END", server_default="C_END")
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    bio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, server_default=func.now())
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
     # 1. 校验数据，密码是否正确
     # *args可以接收任意不带名字的参数
@@ -33,6 +36,8 @@ class User(Base):
             self.role = "C_END"
         if self.is_banned is None:
             self.is_banned = False
+        if self.is_deleted is None:
+            self.is_deleted = False
 
     @property
     def password(self):

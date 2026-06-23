@@ -43,6 +43,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_constraint(op.f("fk_brand_visuals_user_id_user"), "brand_visuals", type_="foreignkey")
     op.drop_index(op.f("ix_brand_visuals_task_id"), table_name="brand_visuals")
     op.drop_index(op.f("ix_brand_visuals_thread_id"), table_name="brand_visuals")
     op.drop_index(op.f("ix_brand_visuals_user_id"), table_name="brand_visuals")

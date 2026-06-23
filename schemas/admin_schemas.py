@@ -22,6 +22,12 @@ class AdminUserOut(BaseModel):
     username: str
     role: UserRole
     is_banned: bool
+    bio: str | None = None
+    created_time: datetime
+    is_deleted: bool = False
+    is_vip: bool = False
+    vip_expires_at: datetime | None = None
+    expert_status: str | None = None
 
 
 class UserPageOut(BaseModel):
@@ -34,6 +40,10 @@ class UserPageOut(BaseModel):
 class BanUserOut(BaseModel):
     id: int
     is_banned: bool
+
+
+class ResetPasswordIn(BaseModel):
+    password: str = Field(..., min_length=3, max_length=50)
 
 
 class OrderOut(BaseModel):

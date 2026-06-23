@@ -1,12 +1,25 @@
+import asyncio
+import sys
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from fastapi import FastAPI, Depends
+import settings
 from fastapi_mail import FastMail, MessageSchema, MessageType
 from routers.auth_router import router as auth_router
 from routers.name_router import router as name_router
 from routers.rag_router import router as rag_router
 from routers.admin_router import router as admin_router
 from routers.visual_router import router as visual_router
+from routers.asset_router import router as asset_router
+from routers.community_router import router as community_router
+from routers.marketplace_router import router as marketplace_router
+from routers.admin_marketplace_router import router as admin_marketplace_router
+from routers.membership_router import router as membership_router
 
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from core.workflow import init_workflow_graph, close_workflow_graph
 
@@ -26,6 +39,16 @@ app.include_router(name_router)
 app.include_router(rag_router)
 app.include_router(admin_router)
 app.include_router(visual_router)
+app.include_router(asset_router)
+app.include_router(community_router)
+app.include_router(marketplace_router)
+app.include_router(admin_marketplace_router)
+app.include_router(membership_router)
+app.mount(
+    "/uploads/visuals",
+    StaticFiles(directory=settings.BASE_DIR / "uploads" / "visuals", check_dir=False),
+    name="visuals",
+)
 
 app.add_middleware(
     CORSMiddleware,

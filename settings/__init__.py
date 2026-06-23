@@ -17,6 +17,9 @@ class AppSettings(BaseSettings):
     DB_URI: str = "mysql+aiomysql://root:password@127.0.0.1:3306/ainame?charset=utf8mb4"
     POSTGRES_MEMORY_URI: str = "postgresql://postgres:password@127.0.0.1:5432/ainame"
     REDIS_URL: str = "redis://127.0.0.1:6379/0"
+    RABBITMQ_URL: str = "amqp://127.0.0.1:5672/"
+    RAG_QUEUE_NAME: str = "rag_document_queue"
+    ENABLE_MOCK_PAYMENT: bool = False
 
     DEEPSEEK_API_KEY: str = "your_deepseek_api_key"
 
@@ -40,6 +43,8 @@ class AppSettings(BaseSettings):
     AIGC_TIMEOUT_SECONDS: int = 10
     AIGC_WAN_IMAGE_URL: str = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
     AIGC_GENERATION_TIMEOUT_SECONDS: int = 180
+    PUBLIC_BASE_URL: str = "http://127.0.0.1:8000"
+    VISUAL_MAX_FILE_SIZE: int = 10 * 1024 * 1024
 
 
 _settings = AppSettings()
@@ -47,6 +52,9 @@ _settings = AppSettings()
 DB_URI = _settings.DB_URI
 POSTGRES_MEMORY_URI = _settings.POSTGRES_MEMORY_URI
 REDIS_URL = _settings.REDIS_URL
+RABBITMQ_URL = _settings.RABBITMQ_URL
+RAG_QUEUE_NAME = _settings.RAG_QUEUE_NAME
+ENABLE_MOCK_PAYMENT = _settings.ENABLE_MOCK_PAYMENT
 
 DEEPSEEK_API_KEY = _settings.DEEPSEEK_API_KEY
 
@@ -70,3 +78,5 @@ AIGC_FETCH_PATH_TEMPLATE = _settings.AIGC_FETCH_PATH_TEMPLATE
 AIGC_TIMEOUT_SECONDS = _settings.AIGC_TIMEOUT_SECONDS
 AIGC_WAN_IMAGE_URL = _settings.AIGC_WAN_IMAGE_URL
 AIGC_GENERATION_TIMEOUT_SECONDS = _settings.AIGC_GENERATION_TIMEOUT_SECONDS
+PUBLIC_BASE_URL = _settings.PUBLIC_BASE_URL.rstrip("/")
+VISUAL_MAX_FILE_SIZE = _settings.VISUAL_MAX_FILE_SIZE

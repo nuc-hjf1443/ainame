@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from . import Base
@@ -12,8 +12,13 @@ class PackageConfig(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100))
+    package_code: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True)
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     api_quota: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    duration_days: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    naming_daily_quota: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    visual_daily_quota: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    expert_discount: Mapped[Decimal] = mapped_column(Numeric(4, 2), default=Decimal("1.00"), server_default="1.00")
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="ACTIVE", server_default="ACTIVE")
     created_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
@@ -55,3 +60,29 @@ class ApiBill(Base):
     token_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     quota_cost: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class UserMembership(Base):
+    __tablename__ = "user_memberships"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), unique=True, index=True)
+    package_id: Mapped[int] = mapped_column(ForeignKey("package_config.id"))
+    start_time: Mapped[datetime] = mapped_column(DateTime)
+    end_time: Mapped[datetime] = mapped_column(DateTime, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="ACTIVE", server_default="ACTIVE")
+    created_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class DailyQuotaUsage(Base):
+    __tablename__ = "daily_quota_usage"
+    __table_args__ = (UniqueConstraint("user_id", "usage_date", name="uq_daily_quota_user_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), index=True)
+    usage_date: Mapped[date] = mapped_column(Date, index=True)
+    naming_used: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    visual_used: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)

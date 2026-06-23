@@ -15,6 +15,7 @@ from schemas.admin_schemas import (
     RefundAuditOut,
     RefundReviewIn,
     SensitiveWordPageOut,
+    ResetPasswordIn,
     UserPageOut,
 )
 
@@ -25,10 +26,11 @@ router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(requir
 async def list_users(
         page: int = Query(1, ge=1),
         page_size: int = Query(20, ge=1, le=100),
+        keyword: str | None = Query(default=None, max_length=100),
         session: AsyncSession = Depends(get_session)
 ):
     repository = AdminRepository(session)
-    users, total = await repository.list_users(page, page_size)
+    users, total = await repository.list_users(page, page_size, keyword)
     return {"items": users, "total": total, "page": page, "page_size": page_size}
 
 
@@ -45,6 +47,35 @@ async def toggle_user_ban(
     if not user:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="用户不存在")
     return {"id": user.id, "is_banned": user.is_banned}
+
+
+@router.put("/users/{user_id}/password")
+async def reset_user_password(
+        user_id: int,
+        data: ResetPasswordIn,
+        current_admin: User = Depends(require_admin),
+        session: AsyncSession = Depends(get_session),
+):
+    if current_admin.id == user_id:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="不能在此重置当前管理员密码")
+    user = await AdminRepository(session).reset_user_password(user_id, data.password)
+    if not user:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="用户不存在")
+    return {"message": "密码已重置"}
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(
+        user_id: int,
+        current_admin: User = Depends(require_admin),
+        session: AsyncSession = Depends(get_session),
+):
+    if current_admin.id == user_id:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="管理员不能删除自己的账号")
+    user = await AdminRepository(session).soft_delete_user(user_id)
+    if not user:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="用户不存在")
+    return {"message": "用户已删除"}
 
 
 @router.get("/finance/orders", response_model=OrderPageOut)
