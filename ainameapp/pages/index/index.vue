@@ -38,7 +38,7 @@
     <button class="btn-primary" :loading="loading" @click="handleGenerate">开始智能起名</button>
 
     <view class="result-box" v-if="names.length > 0">
-      <view class="result-title">为您生成的专属方案：</view>
+      <view class="result-toolbar"><view class="result-title">为您生成的专属方案：</view><button v-if="selectedForPublish.length >= 2" size="mini" class="publish-btn" @click="publishSelected">发布投票（{{selectedForPublish.length}}）</button></view>
       <view class="name-card" v-for="(item, index) in names" :key="index">
         <view class="name-header">
           <text class="name-text">{{ item.name }}</text>
@@ -48,61 +48,12 @@
         </view>
         <view class="name-detail"><text class="label">出处：</text>{{ item.reference }}</view>
         <view class="name-detail"><text class="label">寓意：</text>{{ item.moral }}</view>
-
-        <view class="visual-box">
-          <view class="visual-title">品牌视觉</view>
-          <input
-            class="visual-style-input"
-            :value="getVisualState(index).designStyle"
-            placeholder="视觉风格，如：现代极简商业风"
-            @input="updateVisualStyle(index, $event.detail.value)"
-          />
-          <picker
-            mode="selector"
-            :range="visualModelOptions"
-            @change="updateVisualModel(index, visualModelOptions[$event.detail.value])"
-          >
-            <view class="visual-model-picker">图像模型：{{ getVisualState(index).imageModel }}</view>
-          </picker>
-          <view class="visual-actions">
-            <button
-              size="mini"
-              class="visual-btn"
-              :loading="getVisualState(index).loading"
-              @click="handleGenerateVisual(item, index)"
-            >
-              生成视觉
-            </button>
-            <button
-              v-if="getVisualState(index).visualId"
-              size="mini"
-              class="visual-refresh-btn"
-              :loading="getVisualState(index).refreshing"
-              @click="refreshVisualStatus(index)"
-            >
-              刷新状态
-            </button>
-          </view>
-
-          <view v-if="getVisualState(index).error" class="visual-error">{{ getVisualState(index).error }}</view>
-          <view v-if="getVisualState(index).slogan || getVisualState(index).status" class="visual-result">
-            <view v-if="getVisualState(index).slogan" class="visual-slogan">“{{ getVisualState(index).slogan }}”</view>
-            <view class="visual-status">状态：{{ getVisualState(index).status || 'PENDING' }}</view>
-            <view class="visual-status">模型：{{ getVisualState(index).imageModel }}</view>
-            <image
-              v-if="getVisualState(index).imageUrl"
-              class="visual-image"
-              :src="getVisualState(index).imageUrl"
-              mode="widthFix"
-            />
-            <view
-              v-else-if="getVisualState(index).status === 'PROCESSING' || getVisualState(index).status === 'PENDING'"
-              class="visual-empty"
-            >
-              图片生成中，可稍后刷新查看
-            </view>
-          </view>
+        <view class="asset-actions">
+          <button size="mini" :class="savedAssets[index] ? 'saved-btn' : 'asset-btn'" @click="saveName(item,index)">{{savedAssets[index]?'已收藏':'收藏名字'}}</button>
+          <button size="mini" :class="selectedForPublish.includes(index)?'selected-btn':'asset-btn'" @click="togglePublish(index)">{{selectedForPublish.includes(index)?'已选入投票':'选入投票'}}</button>
         </view>
+
+        <button v-if="formData.category === '企业名'" class="brand-kit-btn" @click="openBrandKit(item)">选定此名字 · 生成品牌方案</button>
       </view>
 
       <view class="feedback-box">
@@ -114,8 +65,7 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, ref } from 'vue';
-import { onUnload } from '@dcloudio/uni-app';
+import { ref } from 'vue';
 import http from '@/http/http.js';
 
 // --- 状态定义 ---
@@ -139,104 +89,55 @@ const feedbackText = ref('');
 const token = ref(uni.getStorageSync('token'));
 const user = ref(uni.getStorageSync('user') || {});
 const isAdmin = ref(String(user.value.role || '').trim().toUpperCase() === 'ADMIN');
-const defaultVisualStyle = '现代极简商业风';
-const defaultVisualModel = 'wan2.6-image';
-const visualModelOptions = ['wan2.6-image'];
-const visualPollInterval = 5000;
-const visualMaxPolls = 12;
-const visualStates = ref({});
-const visualTimers = {};
-const visualPollCounts = {};
-
-const createVisualState = () => ({
-  designStyle: defaultVisualStyle,
-  imageModel: defaultVisualModel,
-  visualId: null,
-  slogan: '',
-  status: '',
-  imageUrl: '',
-  loading: false,
-  refreshing: false,
-  error: ''
-});
-
-const getVisualState = (index) => visualStates.value[index] || createVisualState();
-
-const setVisualState = (index, patch) => {
-  visualStates.value = {
-    ...visualStates.value,
-    [index]: {
-      ...createVisualState(),
-      ...(visualStates.value[index] || {}),
-      ...patch
-    }
-  };
-};
-
-const updateVisualStyle = (index, value) => {
-  setVisualState(index, { designStyle: value });
-};
-
-const updateVisualModel = (index, value) => {
-  setVisualState(index, { imageModel: value || defaultVisualModel });
-};
-
-const clearVisualTimer = (index) => {
-  if (visualTimers[index]) {
-    clearInterval(visualTimers[index]);
-    delete visualTimers[index];
-  }
-  delete visualPollCounts[index];
-};
-
-const clearAllVisualTimers = () => {
-  Object.keys(visualTimers).forEach(clearVisualTimer);
-};
-
-const resetVisualStates = (list = []) => {
-  clearAllVisualTimers();
-  const nextStates = {};
-  list.forEach((_, index) => {
-    nextStates[index] = createVisualState();
-  });
-  visualStates.value = nextStates;
-};
-
-const applyVisualResponse = (index, res) => {
-  setVisualState(index, {
-    visualId: res.visual_id || getVisualState(index).visualId,
-    slogan: res.slogan || getVisualState(index).slogan,
-    status: res.status || getVisualState(index).status,
-    imageUrl: res.image_url || '',
-    imageModel: res.image_model || getVisualState(index).imageModel,
-    error: ''
-  });
-};
-
-const shouldStopVisualPolling = (index) => {
-  const status = getVisualState(index).status;
-  return status === 'SUCCESS' || status === 'FAILED' || visualPollCounts[index] >= visualMaxPolls;
-};
-
-const startVisualPolling = (index) => {
-  clearVisualTimer(index);
-  visualPollCounts[index] = 0;
-  visualTimers[index] = setInterval(async () => {
-    visualPollCounts[index] += 1;
-    await refreshVisualStatus(index, { silent: true });
-
-    if (shouldStopVisualPolling(index)) {
-      clearVisualTimer(index);
-    }
-  }, visualPollInterval);
-};
+const savedAssets = ref({});
+const selectedForPublish = ref([]);
 
 // --- 方法定义 ---
 const switchCategory = (cat) => {
   formData.value.category = cat;
+  formData.value.other = '';
   names.value = []; // 切换场景清空历史
   threadId.value = '';
-  resetVisualStates();
+  savedAssets.value = {};
+  selectedForPublish.value = [];
+};
+
+const saveName = async (item, index) => {
+  if (!token.value) return uni.navigateTo({ url: '/pages/login/login' });
+  if (savedAssets.value[index]) return;
+  try {
+    const asset = await http.saveNameAsset({ thread_id: threadId.value, name: item.name, category: formData.value.category, moral: item.moral || '', reference: item.reference || '', domain: item.domain || null, domain_status: item.domain_status || null });
+    savedAssets.value = { ...savedAssets.value, [index]: asset.id };
+    uni.showToast({ title: '已收藏', icon: 'success' });
+  } catch (e) {}
+};
+
+const togglePublish = index => {
+  const current = [...selectedForPublish.value];
+  const position = current.indexOf(index);
+  if (position >= 0) current.splice(position, 1);
+  else if (current.length < 5) current.push(index);
+  else return uni.showToast({ title: '最多选择5个名字', icon: 'none' });
+  selectedForPublish.value = current;
+};
+
+const publishSelected = () => {
+  const candidates = selectedForPublish.value.map(index => ({ ...names.value[index], category: formData.value.category }));
+  uni.setStorageSync('publishCandidates', candidates);
+  uni.navigateTo({ url: '/pages/community/publish' });
+};
+
+const openBrandKit = item => {
+  if (!token.value) return uni.navigateTo({ url: '/pages/login/login' });
+  if (!threadId.value) return uni.showToast({ title: '请先完成一次企业起名', icon: 'none' });
+  uni.setStorageSync('brandKitDraft', {
+    thread_id: threadId.value,
+    name: item.name,
+    moral: item.moral || '',
+    reference: item.reference || '',
+    industry_hint: formData.value.other || ''
+  });
+  uni.navigateTo({ url: '/pages/brand-kit/index' });
 };
 
 const goAdmin = () => uni.reLaunch({ url: '/pages/admin/index' });
@@ -250,6 +151,11 @@ const logout = () => {
 // 上传专属知识库 (RAG)
 // 上传专属知识库 (RAG) - 兼容 Web 端
 const handleUploadDocs = () => {
+  const currentToken = String(uni.getStorageSync('token') || '').trim();
+  if (!currentToken) {
+    return uni.navigateTo({ url: '/pages/login/login' });
+  }
+
   uni.chooseFile({
     count: 1, // 只允许上传1个文件
     type: 'all', // Web 端建议写 all，通过 extension 限制后缀
@@ -258,17 +164,24 @@ const handleUploadDocs = () => {
       // 拿到本地文件路径
       const tempFilePath = res.tempFiles[0].path;
       uni.showLoading({ title: '知识库解析中...' });
-      
+
+      let toast = { title: '上传成功，正在后台解析', icon: 'success' };
       try {
         // 调用 http.js 里的文件上传封装接口
         await http.uploadKnowledge(tempFilePath);
-        uni.showToast({ title: '知识库学习完成！', icon: 'success' });
       } catch (error) {
         console.error("上传失败:", error);
-        // 错误提示已在 http.js 拦截器里处理过，这里可省略或做额外逻辑
+        const detail = error?.data?.detail;
+        toast = {
+          title: typeof detail === 'string' ? detail : '文件上传失败，请稍后重试',
+          icon: 'none'
+        };
       } finally {
         uni.hideLoading();
       }
+
+      // loading 关闭后再显示 toast，避免 showLoading/hideLoading 配对警告
+      uni.showToast(toast);
     },
     fail: (err) => {
       // 如果用户中途取消了选择，这里会捕获到，不用报错
@@ -279,6 +192,9 @@ const handleUploadDocs = () => {
 
 // 首次生成 (创建 Thread)
 const handleGenerate = async () => {
+  if (!token.value) {
+    return uni.navigateTo({ url: '/pages/login/login' });
+  }
   if (formData.value.category === '人名' && !formData.value.surname.trim()) {
     return uni.showToast({ title: '人名必须填写姓氏', icon: 'none' });
   }
@@ -291,7 +207,8 @@ const handleGenerate = async () => {
     names.value = res.names;
     threadId.value = res.thread_id; // 保存后端返回的记忆指针
     feedbackText.value = ''; // 清空上一轮反馈
-    resetVisualStates(res.names || []);
+    savedAssets.value = {};
+    selectedForPublish.value = [];
   } catch (e) {
     console.error(e);
   } finally {
@@ -318,7 +235,6 @@ const handleFeedback = async () => {
     names.value = res.names;
     // threadId 保持不变，实现无限轮次对话
     feedbackText.value = ''; 
-    resetVisualStates(res.names || []);
   } catch (e) {
     console.error(e);
   } finally {
@@ -327,83 +243,6 @@ const handleFeedback = async () => {
   }
 };
 
-const handleGenerateVisual = async (item, index) => {
-  if (!token.value) {
-    return uni.showToast({ title: '请先登录后再生成视觉', icon: 'none' });
-  }
-
-  if (!threadId.value) {
-    return uni.showToast({ title: '请先完成一次起名生成', icon: 'none' });
-  }
-
-  const designStyle = getVisualState(index).designStyle.trim() || defaultVisualStyle;
-  const imageModel = getVisualState(index).imageModel || defaultVisualModel;
-  clearVisualTimer(index);
-  setVisualState(index, {
-    designStyle,
-    imageModel,
-    loading: true,
-    error: '',
-    status: '',
-    imageUrl: '',
-    slogan: ''
-  });
-
-  try {
-    const res = await http.generateVisual({
-      thread_id: threadId.value,
-      name: item.name,
-      moral: item.moral || '',
-      category: formData.value.category,
-      design_style: designStyle,
-      image_model: imageModel
-    });
-    applyVisualResponse(index, res);
-
-    if (!shouldStopVisualPolling(index)) {
-      startVisualPolling(index);
-    }
-  } catch (e) {
-    const message = typeof e?.detail === 'string' ? e.detail : '视觉生成请求失败';
-    setVisualState(index, { error: message });
-  } finally {
-    setVisualState(index, { loading: false });
-  }
-};
-
-const refreshVisualStatus = async (index, options = {}) => {
-  const visualId = getVisualState(index).visualId;
-  if (!visualId) return;
-
-  if (!options.silent) {
-    setVisualState(index, { refreshing: true, error: '' });
-  }
-
-  try {
-    const res = await http.getVisualStatus(visualId);
-    applyVisualResponse(index, res);
-
-    if (getVisualState(index).status === 'SUCCESS' || getVisualState(index).status === 'FAILED') {
-      clearVisualTimer(index);
-    }
-  } catch (e) {
-    const message = typeof e?.detail === 'string' ? e.detail : '视觉状态刷新失败';
-    setVisualState(index, { error: message });
-    clearVisualTimer(index);
-  } finally {
-    if (!options.silent) {
-      setVisualState(index, { refreshing: false });
-    }
-  }
-};
-
-onBeforeUnmount(() => {
-  clearAllVisualTimers();
-});
-
-onUnload(() => {
-  clearAllVisualTimers();
-});
 </script>
 
 <style scoped>
@@ -434,6 +273,9 @@ onUnload(() => {
 /* 结果卡片 */
 .result-box { margin-top: 40rpx; }
 .result-title { font-size: 32rpx; font-weight: bold; margin-bottom: 20rpx; }
+.result-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20rpx; margin-bottom: 20rpx; }
+.result-toolbar .result-title { margin-bottom: 0; }
+.publish-btn { background: #134e4a; color: #fff; margin: 0; }
 .name-card { background: #fff; padding: 30rpx; border-radius: 16rpx; margin-bottom: 24rpx; box-shadow: 0 4rpx 12rpx rgba(0,0,0,0.05); }
 .name-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16rpx; }
 .name-text { font-size: 40rpx; font-weight: bold; color: #333; }
@@ -445,18 +287,10 @@ onUnload(() => {
 
 .name-detail { font-size: 26rpx; color: #666; line-height: 1.6; margin-bottom: 8rpx; }
 .label { font-weight: bold; color: #333; }
-.visual-box { margin-top: 24rpx; padding-top: 24rpx; border-top: 1px solid #eef2f7; }
-.visual-title { font-size: 28rpx; font-weight: bold; color: #1f2937; margin-bottom: 14rpx; }
-.visual-style-input { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8rpx; padding: 18rpx 20rpx; font-size: 26rpx; box-sizing: border-box; }
-.visual-model-picker { margin-top: 14rpx; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8rpx; padding: 18rpx 20rpx; font-size: 26rpx; color: #334155; box-sizing: border-box; }
-.visual-actions { display: flex; gap: 16rpx; margin-top: 16rpx; align-items: center; flex-wrap: wrap; }
-.visual-btn { background: #0f766e; color: #fff; }
-.visual-refresh-btn { background: #fff; color: #0f766e; border: 1px solid #99f6e4; }
-.visual-result { margin-top: 18rpx; background: #f8fafc; border-radius: 10rpx; padding: 18rpx; }
-.visual-slogan { font-size: 28rpx; color: #111827; font-weight: bold; margin-bottom: 10rpx; }
-.visual-status { font-size: 24rpx; color: #64748b; margin-bottom: 12rpx; }
-.visual-image { width: 100%; border-radius: 10rpx; display: block; }
-.visual-empty { font-size: 24rpx; color: #64748b; }
-.visual-error { margin-top: 14rpx; color: #dc2626; font-size: 24rpx; }
+.asset-actions { display: flex; gap: 12rpx; margin-top: 18rpx; }
+.asset-actions button { margin: 0; }
+.asset-btn { background: #fff; color: #475569; border: 1px solid #cbd5e1; }
+.saved-btn,.selected-btn { background: #ecfdf8; color: #0f766e; border: 1px solid #5eead4; }
+.brand-kit-btn { width: auto; margin: 24rpx 0 0; padding: 0 24rpx; background: #15265d; color: #fff; border-radius: 36rpx; font-size: 25rpx; }
 .feedback-box { margin-top: 40rpx; background: #fff; padding: 30rpx; border-radius: 16rpx; }
 </style>

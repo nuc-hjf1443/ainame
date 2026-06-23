@@ -1,3 +1,9 @@
+import asyncio
+import uuid
+from datetime import date
+from pathlib import Path
+
+import httpx
 from langchain_deepseek import ChatDeepSeek
 
 import settings
@@ -5,6 +11,34 @@ from core.aigc_tools import fetch_visual_task, normalize_aigc_status, submit_vis
 from models.visual import BrandVisual
 from repository.visual_repo import BrandVisualRepository
 from schemas.visual_schemas import SloganAndPromptSchema, VisualGenerateIn
+
+
+VISUAL_DIR = settings.BASE_DIR / "uploads" / "visuals"
+IMAGE_EXTENSIONS = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
+
+
+async def persist_visual_image(source_url: str, user_id: int) -> tuple[str, str]:
+    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+        async with client.stream("GET", source_url) as response:
+            response.raise_for_status()
+            content_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
+            extension = IMAGE_EXTENSIONS.get(content_type)
+            if not extension:
+                raise ValueError("视觉服务返回的不是受支持图片")
+            chunks: list[bytes] = []
+            size = 0
+            async for chunk in response.aiter_bytes():
+                size += len(chunk)
+                if size > settings.VISUAL_MAX_FILE_SIZE:
+                    raise ValueError("生成图片超过 10 MB 限制")
+                chunks.append(chunk)
+
+    relative_path = Path(str(user_id)) / f"{uuid.uuid4().hex}{extension}"
+    target = VISUAL_DIR / relative_path
+    await asyncio.to_thread(target.parent.mkdir, parents=True, exist_ok=True)
+    await asyncio.to_thread(target.write_bytes, b"".join(chunks))
+    public_url = f"{settings.PUBLIC_BASE_URL}/uploads/visuals/{relative_path.as_posix()}"
+    return public_url, str(target)
 
 
 def _fallback_slogan_prompt(data: VisualGenerateIn) -> SloganAndPromptSchema:
@@ -46,7 +80,8 @@ async def generate_slogan_and_prompt(data: VisualGenerateIn) -> SloganAndPromptS
 async def create_brand_visual(
         data: VisualGenerateIn,
         user_id: int,
-        repository: BrandVisualRepository
+        repository: BrandVisualRepository,
+        quota_usage_date: date,
 ) -> BrandVisual:
     slogan_prompt = await generate_slogan_and_prompt(data)
     visual = BrandVisual(
@@ -60,19 +95,26 @@ async def create_brand_visual(
         slogan=slogan_prompt.slogan,
         prompt_used=slogan_prompt.mj_prompt,
         status="PENDING",
+        quota_usage_date=quota_usage_date,
     )
     visual = await repository.create_visual(visual)
 
     try:
         task = await submit_visual_task(slogan_prompt.mj_prompt, data.image_model)
-    except Exception:
-        return await repository.update_visual_status(visual, status="FAILED")
+        image_url, image_path = task.image_url, None
+        if task.status == "SUCCESS":
+            if not task.image_url:
+                raise ValueError("视觉服务未返回图片地址")
+            image_url, image_path = await persist_visual_image(task.image_url, user_id)
+    except Exception as exc:
+        return await repository.update_visual_status(visual, status="FAILED", error_message=str(exc)[:1000])
 
     return await repository.update_visual_status(
         visual,
         status=task.status,
         task_id=task.task_id,
-        image_url=task.image_url,
+        image_url=image_url,
+        image_path=image_path,
     )
 
 
@@ -85,11 +127,19 @@ async def refresh_brand_visual_status(
 
     try:
         task = await fetch_visual_task(visual.task_id)
-    except Exception:
+        image_url, image_path = task.image_url, None
+        if task.status == "SUCCESS":
+            if not task.image_url:
+                raise ValueError("视觉服务未返回图片地址")
+            image_url, image_path = await persist_visual_image(task.image_url, visual.user_id)
+    except Exception as exc:
+        if visual.status == "PROCESSING":
+            return await repository.update_visual_status(visual, status="FAILED", error_message=str(exc)[:1000])
         return visual
 
     return await repository.update_visual_status(
         visual,
         status=normalize_aigc_status(task.status),
-        image_url=task.image_url,
+        image_url=image_url,
+        image_path=image_path,
     )

@@ -1,12 +1,15 @@
-import os
+from pathlib import Path
+
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 
+import settings
+
 # 初始化嵌入模型 (复用之前配置好的 nomic-embed-text)
 embedding_model = OllamaEmbeddings(model="nomic-embed-text")
-DB_PATH = "./chroma_rag_db"
+DB_PATH = str(settings.BASE_DIR / "chroma_rag_db")
 
 
 # 把数据存储到语义数据库
@@ -17,13 +20,19 @@ def process_and_stor_file(file_path, user_id):
     :param user_id:
     :return:
     """
-    if file_path.endswith(".pdf"):
-        doc = PyPDFLoader(file_path).load()
-    elif file_path.endswith(".txt"):
-        doc = TextLoader(file_path, encoding="utf-8").load()
+    source_path = Path(file_path)
+    if not source_path.is_file():
+        raise FileNotFoundError(f"待处理文件不存在: {source_path}")
+
+    if source_path.suffix.lower() == ".pdf":
+        doc = PyPDFLoader(str(source_path)).load()
+    elif source_path.suffix.lower() == ".txt":
+        doc = TextLoader(str(source_path), encoding="utf-8").load()
     else:
-        print("不支持的文件格式")
-        return
+        raise ValueError(f"不支持的文件格式: {source_path.suffix}")
+
+    if not doc:
+        raise ValueError("文件中没有可解析的文本内容")
 
     doc_spliter = RecursiveCharacterTextSplitter(
         chunk_size=300,

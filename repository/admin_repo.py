@@ -1,13 +1,15 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio.session import AsyncSession
 
 from models.ai_asset import AgentConfig, KnowledgeBase
 from models.audit import SensitiveWordInterception
 from models.finance import Order, RefundAudit
 from models.user import User
+from models.finance import UserMembership
+from models.marketplace import ExpertProfile
 
 
 class AdminRepository:
@@ -22,15 +24,44 @@ class AdminRepository:
         )
         return result.scalars().all(), total or 0
 
-    async def list_users(self, page: int, page_size: int):
-        stmt = select(User).order_by(User.id.desc())
-        return await self._paginate(stmt, page, page_size)
+    async def list_users(self, page: int, page_size: int, keyword: str | None = None):
+        stmt = select(User)
+        if keyword:
+            pattern = f"%{keyword.strip()}%"
+            stmt = stmt.where(or_(User.username.like(pattern), User.email.like(pattern)))
+        users, total = await self._paginate(stmt.order_by(User.id.desc()), page, page_size)
+        now = datetime.now()
+        for user in users:
+            membership = await self.session.scalar(select(UserMembership).where(UserMembership.user_id == user.id, UserMembership.status == "ACTIVE", UserMembership.end_time > now))
+            expert = await self.session.scalar(select(ExpertProfile).where(ExpertProfile.user_id == user.id))
+            user.is_vip = bool(membership)
+            user.vip_expires_at = membership.end_time if membership else None
+            user.expert_status = expert.status if expert else None
+        return users, total
 
     async def toggle_user_ban(self, user_id: int):
         user = await self.session.get(User, user_id)
-        if not user:
+        if not user or user.is_deleted:
             return None
         user.is_banned = not user.is_banned
+        await self.session.commit()
+        await self.session.refresh(user)
+        return user
+
+    async def reset_user_password(self, user_id: int, password: str):
+        user = await self.session.get(User, user_id)
+        if not user or user.is_deleted:
+            return None
+        user.password = password
+        await self.session.commit()
+        return user
+
+    async def soft_delete_user(self, user_id: int):
+        user = await self.session.get(User, user_id)
+        if not user:
+            return None
+        user.is_deleted = True
+        user.is_banned = True
         await self.session.commit()
         await self.session.refresh(user)
         return user

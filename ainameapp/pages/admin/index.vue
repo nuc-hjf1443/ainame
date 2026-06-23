@@ -6,6 +6,7 @@
         <view class="subtitle">运营、AI 配置与审计管理</view>
       </view>
       <view class="top-actions">
+        <button class="ghost-btn" size="mini" @click="goMarketplaceAdmin">市场治理</button>
         <button class="ghost-btn" size="mini" @click="goHome">起名首页</button>
         <button class="logout-btn" size="mini" @click="logout">退出登录</button>
       </view>
@@ -28,37 +29,34 @@
           <view class="panel-head">
             <view>
               <view class="panel-title">用户管理</view>
-              <view class="panel-desc">查看用户角色和封禁状态</view>
+              <view class="panel-desc">搜索用户并管理账号、VIP 与专家身份</view>
             </view>
             <button size="mini" @click="loadUsers">刷新</button>
           </view>
 
+          <view class="user-search">
+            <input class="search-input" :value="userKeyword" placeholder="搜索用户名或邮箱" @input="userKeyword = $event.detail.value" @confirm="searchUsers" />
+            <button class="search-btn" @click="searchUsers">搜索</button>
+          </view>
+
           <view v-if="users.loading" class="state">加载中...</view>
           <view v-else-if="!users.items.length" class="state">暂无用户数据</view>
-          <scroll-view v-else scroll-x class="table-scroll">
-            <view class="table min-users">
-              <view class="tr th">
-                <text>ID</text>
-                <text>邮箱</text>
-                <text>用户名</text>
-                <text>角色</text>
-                <text>状态</text>
-                <text>操作</text>
+          <view v-else class="user-grid">
+            <view class="user-card" v-for="item in users.items" :key="item.id">
+              <view class="user-card-head">
+                <view><view class="user-name">{{ item.username }}</view><view class="user-email">{{ item.email }}</view></view>
+                <text :class="['status-tag', item.is_deleted || item.is_banned ? 'blocked' : 'normal']">{{ item.is_deleted ? '已删除' : item.is_banned ? '已封禁' : '正常' }}</text>
               </view>
-              <view class="tr" v-for="item in users.items" :key="item.id">
-                <text>{{ item.id }}</text>
-                <text>{{ item.email }}</text>
-                <text>{{ item.username }}</text>
-                <text>{{ item.role }}</text>
-                <text :class="item.is_banned ? 'danger' : 'success'">
-                  {{ item.is_banned ? '已封禁' : '正常' }}
-                </text>
-                <button size="mini" @click="toggleBan(item)">
-                  {{ item.is_banned ? '解封' : '封禁' }}
-                </button>
+              <view class="user-meta">ID {{ item.id }} · {{ item.role }} · 注册于 {{ formatTime(item.created_time) }}</view>
+              <view class="user-badges"><text v-if="item.is_vip" class="vip-tag">VIP 至 {{ formatTime(item.vip_expires_at) }}</text><text v-if="item.expert_status" class="expert-tag">专家：{{ item.expert_status }}</text></view>
+              <view class="user-actions">
+                <button size="mini" :disabled="item.is_deleted" @click="toggleBan(item)">{{ item.is_banned ? '解封' : '封禁' }}</button>
+                <button size="mini" :disabled="item.is_deleted" @click="openResetPassword(item)">重置密码</button>
+                <button size="mini" :disabled="item.is_deleted" @click="giftVip(item)">赠送月度 VIP</button>
+                <button size="mini" class="delete-btn" :disabled="item.is_deleted" @click="deleteUser(item)">删除</button>
               </view>
             </view>
-          </scroll-view>
+          </view>
           <view class="pager">
             <button size="mini" :disabled="users.page <= 1" @click="prevUsers">上一页</button>
             <text>第 {{ users.page }} 页 / 共 {{ users.total }} 条</text>
@@ -186,6 +184,14 @@
         </view>
       </view>
     </view>
+
+    <view v-if="resetDialog" class="dialog-overlay" @click="closeResetPassword">
+      <view class="reset-dialog" @click.stop>
+        <view class="dialog-title">重置 {{ resetTarget?.username }} 的密码</view>
+        <input class="dialog-input" password :value="newPassword" placeholder="输入新密码（至少 3 位）" @input="newPassword = $event.detail.value" />
+        <view class="dialog-actions"><button @click="closeResetPassword">取消</button><button class="primary-btn" :loading="resetLoading" @click="submitResetPassword">确认重置</button></view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -204,6 +210,11 @@ const modules = [
 const activeModule = ref('users');
 const pageSize = 20;
 const currentUser = uni.getStorageSync('user') || {};
+const userKeyword = ref('');
+const resetDialog = ref(false);
+const resetTarget = ref(null);
+const newPassword = ref('');
+const resetLoading = ref(false);
 
 const users = reactive({ items: [], total: 0, page: 1, loading: false });
 const orders = reactive({ items: [], total: 0, page: 1, loading: false });
@@ -272,7 +283,7 @@ const formatTime = (value) => {
 const loadUsers = async () => {
   users.loading = true;
   try {
-    const res = await http.getAdminUsers(users.page, pageSize);
+    const res = await http.getAdminUsers(users.page, pageSize, userKeyword.value.trim());
     users.items = res.items || [];
     users.total = res.total || 0;
   } catch (e) {
@@ -280,6 +291,11 @@ const loadUsers = async () => {
   } finally {
     users.loading = false;
   }
+};
+
+const searchUsers = () => {
+  users.page = 1;
+  loadUsers();
 };
 
 const toggleBan = async (item) => {
@@ -291,6 +307,40 @@ const toggleBan = async (item) => {
     console.error(e);
   }
 };
+
+const openResetPassword = item => {
+  resetTarget.value = item;
+  newPassword.value = '';
+  resetDialog.value = true;
+};
+const closeResetPassword = () => {
+  resetDialog.value = false;
+  resetTarget.value = null;
+  newPassword.value = '';
+};
+const submitResetPassword = async () => {
+  if (newPassword.value.length < 3) return uni.showToast({ title: '密码至少 3 位', icon: 'none' });
+  resetLoading.value = true;
+  try {
+    await http.resetAdminUserPassword(resetTarget.value.id, newPassword.value);
+    closeResetPassword();
+    uni.showToast({ title: '密码已重置' });
+  } finally {
+    resetLoading.value = false;
+  }
+};
+const giftVip = item => uni.showModal({ title: '赠送月度 VIP', content: `为 ${item.username} 增加 30 天 VIP？`, success: async result => {
+  if (!result.confirm) return;
+  await http.giftAdminUserVip(item.id);
+  uni.showToast({ title: 'VIP 已赠送' });
+  await loadUsers();
+}});
+const deleteUser = item => uni.showModal({ title: '删除用户', content: `将软删除 ${item.username}，其历史数据会保留。`, confirmColor: '#dc2626', success: async result => {
+  if (!result.confirm) return;
+  await http.deleteAdminUser(item.id);
+  uni.showToast({ title: '用户已删除' });
+  await loadUsers();
+}});
 
 const prevUsers = () => {
   if (users.page <= 1) return;
@@ -423,6 +473,7 @@ const nextAudit = () => {
 };
 
 const goHome = () => uni.reLaunch({ url: '/pages/index/index' });
+const goMarketplaceAdmin = () => uni.navigateTo({ url: '/pages/admin/marketplace' });
 
 const logout = () => {
   uni.removeStorageSync('token');
@@ -520,6 +571,7 @@ const logout = () => {
   text-align: center;
   color: #64748b;
 }
+.user-search{display:flex;gap:14rpx;margin-bottom:24rpx}.search-input{height:78rpx;flex:1;min-width:0;padding:0 20rpx;background:#f8fafc;border:1px solid #dbe3ef;border-radius:8rpx;box-sizing:border-box}.search-btn{width:150rpx;background:#2563eb;color:#fff;border-radius:8rpx}.user-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18rpx}.user-card{border:1px solid #e5e7eb;border-radius:8rpx;padding:22rpx}.user-card-head{display:flex;justify-content:space-between;gap:18rpx}.user-name{font-size:30rpx;font-weight:700}.user-email,.user-meta{color:#64748b;font-size:23rpx;margin-top:6rpx}.status-tag,.vip-tag,.expert-tag{font-size:21rpx;padding:5rpx 12rpx;border-radius:20rpx;white-space:nowrap}.status-tag.normal{background:#ecfdf5;color:#15803d}.status-tag.blocked{background:#fff1f2;color:#be123c}.user-badges{display:flex;gap:10rpx;flex-wrap:wrap;margin-top:16rpx}.vip-tag{background:#fff7ed;color:#c2410c}.expert-tag{background:#ecfeff;color:#0f766e}.user-actions{display:flex;gap:10rpx;flex-wrap:wrap;margin-top:20rpx}.user-actions button{margin:0}.delete-btn{color:#dc2626!important}.dialog-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;padding:30rpx;z-index:100}.reset-dialog{width:min(620rpx,100%);background:#fff;border-radius:8rpx;padding:28rpx;box-sizing:border-box}.dialog-title{font-size:30rpx;font-weight:700}.dialog-input{height:82rpx;border:1px solid #cbd5e1;background:#f8fafc;border-radius:8rpx;padding:0 18rpx;margin:24rpx 0;box-sizing:border-box}.dialog-actions{display:flex;justify-content:flex-end;gap:12rpx}.dialog-actions button{margin:0}
 .table-scroll {
   width: 100%;
 }
@@ -660,5 +712,6 @@ const logout = () => {
     align-items: flex-start;
     gap: 16rpx;
   }
+  .user-grid{grid-template-columns:1fr}.user-search{align-items:stretch}.search-btn{width:130rpx}
 }
 </style>

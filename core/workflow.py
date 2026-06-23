@@ -179,7 +179,8 @@ naming_graph = None
 async def init_workflow_graph():
     """在 FastAPI 启动时调用此函数来初始化图和连接池"""
     global connection_pool, naming_graph
-    connection_pool = AsyncConnectionPool(DB_URI, max_size=10)
+    connection_pool = AsyncConnectionPool(DB_URI, max_size=10, open=False)
+    await connection_pool.open(wait=True)
     memory = AsyncPostgresSaver(connection_pool)
     # 编译带记忆的智能体
     naming_graph = workflow.compile(checkpointer=memory)
@@ -187,9 +188,11 @@ async def init_workflow_graph():
 
 async def close_workflow_graph():
     """在 FastAPI 关闭时清理连接"""
-    global connection_pool
+    global connection_pool, naming_graph
     if connection_pool:
         await connection_pool.close()
+    connection_pool = None
+    naming_graph = None
 
 
 # 完成起名流程的定义

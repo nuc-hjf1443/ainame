@@ -26,7 +26,9 @@ env/
 Thumbs.db
 
 # Local design docs
-docs/
+docs/*
+!docs/PROJECT_ROADMAP.md
+!docs/CURRENT_ARCHITECTURE.md
 
 # Local runtime data
 uploads/
