@@ -1,21 +1,22 @@
 {
-	"pages": [ //pages数组中第一项表示应用启动页，参考：https://uniapp.dcloud.io/collocation/pages
+	"pages": [ //pages数组中第一项表示应用启动页
 		{
 			"path": "pages/index/index",
 			"style": {
-				"navigationBarTitleText": "AI 起名"
+				"navigationBarTitleText": "AI 起名",
+				"navigationStyle": "custom"
 			}
 		},
 		{
 			"path": "pages/login/login",
 			"style": {
-				"navigationBarTitleText": ""
+				"navigationBarTitleText": "登录"
 			}
 		},
 		{
 			"path": "pages/register/register",
 			"style": {
-				"navigationBarTitleText": ""
+				"navigationBarTitleText": "注册"
 			}
 		},
 		{
@@ -24,33 +25,92 @@
 				"navigationBarTitleText": "管理员后台"
 			}
 		},
-		{"path":"pages/community/index","style":{"navigationBarTitleText":"灵感广场"}},
-		{"path":"pages/community/detail","style":{"navigationBarTitleText":"灵感详情"}},
-		{"path":"pages/community/publish","style":{"navigationBarTitleText":"发布灵感"}},
-		{"path":"pages/marketplace/index","style":{"navigationBarTitleText":"专家服务"}},
-		{"path":"pages/marketplace/detail","style":{"navigationBarTitleText":"专家详情"}},
-		{"path":"pages/brand-kit/index","style":{"navigationBarTitleText":"AI 品牌工作台"}},
-		{"path":"pages/profile/index","style":{"navigationBarTitleText":"我的"}},
-		{"path":"pages/expert/workbench","style":{"navigationBarTitleText":"专家工作台"}},
-		{"path":"pages/admin/marketplace","style":{"navigationBarTitleText":"市场治理"}}
+		{
+			"path": "pages/community/index",
+			"style": {
+				"navigationBarTitleText": "灵感广场",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/community/detail",
+			"style": {
+				"navigationBarTitleText": "灵感详情"
+			}
+		},
+		{
+			"path": "pages/community/publish",
+			"style": {
+				"navigationBarTitleText": "发布灵感"
+			}
+		},
+		{
+			"path": "pages/marketplace/index",
+			"style": {
+				"navigationBarTitleText": "专家服务",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/marketplace/detail",
+			"style": {
+				"navigationBarTitleText": "专家详情"
+			}
+		},
+		{
+			"path": "pages/recharge/index",
+			"style": {
+				"navigationBarTitleText": "充值中心",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/assets/index",
+			"style": {
+				"navigationBarTitleText": "资产中心",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/brand-kit/index",
+			"style": {
+				"navigationBarTitleText": "AI 品牌工作台",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/profile/index",
+			"style": {
+				"navigationBarTitleText": "我的",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/expert/workbench",
+			"style": {
+				"navigationBarTitleText": "专家工作台",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/expert/apply",
+			"style": {
+				"navigationBarTitleText": "专家申请",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/admin/marketplace",
+			"style": {
+				"navigationBarTitleText": "市场治理"
+			}
+		}
 	],
-	"tabBar": {
-		"color": "#64748b",
-		"selectedColor": "#0f766e",
-		"backgroundColor": "#ffffff",
-		"borderStyle": "black",
-		"list": [
-			{"pagePath":"pages/index/index","text":"AI 起名"},
-			{"pagePath":"pages/community/index","text":"灵感广场"},
-			{"pagePath":"pages/marketplace/index","text":"专家服务"},
-			{"pagePath":"pages/profile/index","text":"我的"}
-		]
-	},
 	"globalStyle": {
 		"navigationBarTextStyle": "black",
-		"navigationBarTitleText": "AI 起名",
-		"navigationBarBackgroundColor": "#F8F8F8",
-		"backgroundColor": "#F8F8F8"
+		"navigationBarTitleText": "启名星",
+		"navigationBarBackgroundColor": "#FFFFFF",
+		"backgroundColor": "#F8F9FA"
 	},
 	"uniIdRouter": {}
 }

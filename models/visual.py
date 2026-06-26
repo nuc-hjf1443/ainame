@@ -11,6 +11,7 @@ class BrandKit(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), index=True)
+    naming_asset_id: Mapped[int | None] = mapped_column(ForeignKey("naming_assets.id"), nullable=True, index=True)
     thread_id: Mapped[str] = mapped_column(String(100), index=True)
     name: Mapped[str] = mapped_column(String(100))
     moral: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -1,4 +1,5 @@
 <template>
+  <DashboardLayout currentMenu="ai_name">
   <view class="page">
     <view v-if="!draft.name" class="empty-state">
       <view class="empty-title">请先选择企业名字</view>
@@ -58,12 +59,14 @@
       </template>
     </template>
   </view>
+  </DashboardLayout>
 </template>
 
 <script setup>
 import { computed, reactive, ref } from 'vue';
 import { onLoad, onUnload } from '@dcloudio/uni-app';
 import http from '@/http/http.js';
+import DashboardLayout from '@/components/DashboardLayout/DashboardLayout.vue';
 
 const draft = reactive({ thread_id: '', name: '', moral: '', industry_hint: '' });
 const form = reactive({ industry: '', audience: '', design_style: '现代简约', primary_color: '蓝色' });
@@ -121,7 +124,7 @@ const refreshKit = async silent => {
   try { kit.value = await http.getBrandKit(kit.value.id); } finally { if (!silent) refreshing.value = false; }
 };
 const preview = url => uni.previewImage({ current: url, urls: kit.value.assets.filter(item => item.image_url).map(item => item.image_url) });
-const goHome = () => uni.switchTab({ url: '/pages/index/index' });
+const goHome = () => uni.reLaunch({ url: '/pages/index/index' });
 
 onLoad(async () => {
   Object.assign(draft, uni.getStorageSync('brandKitDraft') || {});

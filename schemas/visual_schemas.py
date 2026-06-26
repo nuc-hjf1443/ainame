@@ -41,6 +41,7 @@ class SloganAndPromptSchema(BaseModel):
 
 
 class BrandKitCreateIn(BaseModel):
+    naming_asset_id: int | None = None
     thread_id: str = Field(..., min_length=1, max_length=100)
     name: str = Field(..., min_length=1, max_length=100)
     moral: str = Field(default="", max_length=2000)
@@ -64,6 +65,7 @@ class BrandKitAssetOut(BaseModel):
 
 class BrandKitOut(BaseModel):
     id: int
+    naming_asset_id: int | None
     name: str
     moral: str | None
     industry: str
@@ -74,3 +76,10 @@ class BrandKitOut(BaseModel):
     status: VisualStatus
     assets: list[BrandKitAssetOut]
     created_time: datetime
+
+
+class BrandKitPageOut(BaseModel):
+    items: list[BrandKitOut]
+    total: int
+    page: int
+    page_size: int

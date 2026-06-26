@@ -93,6 +93,7 @@ async def test_rejected_expert_can_reapply(session):
         "years_experience": 3,
     })
     profile.status = "REJECTED"
+    profile.review_note = "证明材料不足"
     await session.commit()
 
     reapplied = await repo.apply_expert(user.id, {
@@ -103,3 +104,9 @@ async def test_rejected_expert_can_reapply(session):
 
     assert reapplied.status == "PENDING"
     assert reapplied.display_name == "新资料"
+    assert reapplied.review_note is None
+    assert not await repo.apply_expert(user.id, {
+        "display_name": "待审重复", "expert_type": "CULTURE_MASTER",
+        "bio": "这是重复提交的专家个人简介资料。", "credentials": "这是重复提交的专家资历说明。",
+        "years_experience": 6,
+    })

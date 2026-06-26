@@ -14,7 +14,7 @@ from core.quota_service import (
     reserve_quota,
 )
 from models.asset import NamingAsset
-from models.finance import DailyQuotaUsage, PackageConfig, UserMembership
+from models.finance import DailyQuotaUsage, PackageConfig, UserMembership, UserQuotaBalance
 from models.marketplace import ExpertProfile, ExpertServicePackage
 from models.user import User
 from models.visual import BrandKit, BrandVisual
@@ -40,6 +40,23 @@ async def create_vip_package(session, code="VIP_MONTHLY", days=30):
         naming_daily_quota=100,
         visual_daily_quota=20,
         expert_discount=Decimal("0.90"),
+        status="ACTIVE",
+    )
+    session.add(package)
+    await session.commit()
+    return package
+
+
+async def create_naming_quota_package(session, code="QUOTA_NAMING_30", quota=30):
+    package = PackageConfig(
+        package_code=code,
+        name="30 次起名包",
+        price=Decimal("9.90"),
+        api_quota=quota,
+        duration_days=0,
+        naming_daily_quota=0,
+        visual_daily_quota=0,
+        expert_discount=Decimal("1.00"),
         status="ACTIVE",
     )
     session.add(package)
@@ -96,6 +113,46 @@ async def test_free_and_vip_daily_quota_and_refund(session):
     snapshot = await quota_snapshot(session, vip_user.id)
     assert snapshot["visual_limit"] == 20
     assert snapshot["visual_used"] == 1
+
+
+@pytest.mark.asyncio
+async def test_naming_quota_package_adds_balance_and_is_used_after_daily_quota(session):
+    user = await create_user(session, "quota-balance")
+    package = await create_naming_quota_package(session, quota=30)
+    repo = MembershipRepository(session)
+
+    order = await repo.create_order(user.id, package.id)
+    _, membership = await repo.pay_order(order.id, user.id)
+    assert membership is None
+
+    balance = await repo.get_quota_balance(user.id)
+    assert balance.naming_balance == 30
+
+    for _ in range(5):
+        await reserve_quota(session, user.id, "NAMING")
+
+    token = await reserve_quota(session, user.id, "NAMING")
+    assert token == {"source": "BALANCE"}
+    await session.refresh(balance)
+    assert balance.naming_balance == 29
+
+    await refund_quota(session, user.id, "NAMING", token)
+    await session.refresh(balance)
+    assert balance.naming_balance == 30
+
+
+@pytest.mark.asyncio
+async def test_naming_quota_still_blocks_without_daily_or_balance(session):
+    user = await create_user(session, "no-balance")
+    session.add(UserQuotaBalance(user_id=user.id, naming_balance=0))
+    await session.commit()
+
+    for _ in range(5):
+        await reserve_quota(session, user.id, "NAMING")
+
+    with pytest.raises(HTTPException) as error:
+        await reserve_quota(session, user.id, "NAMING")
+    assert error.value.status_code == 429
 
 
 @pytest.mark.asyncio

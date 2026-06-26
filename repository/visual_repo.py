@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio.session import AsyncSession
 
 from models.visual import BrandKit, BrandVisual
@@ -45,6 +45,25 @@ class BrandVisualRepository:
         )
         return list(result.scalars().all())
 
+    async def list_user_brand_kits(self, user_id: int, page: int, page_size: int):
+        where = BrandKit.user_id == user_id
+        total = await self.session.scalar(select(func.count()).select_from(BrandKit).where(where)) or 0
+        result = await self.session.execute(
+            select(BrandKit)
+            .where(where)
+            .order_by(BrandKit.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        return list(result.scalars().all()), total
+
+    async def delete_brand_kit(self, kit: BrandKit) -> None:
+        assets = await self.list_brand_kit_assets(kit.id)
+        for asset in assets:
+            await self.session.delete(asset)
+        await self.session.delete(kit)
+        await self.session.commit()
+
     async def set_brand_kit_status(self, kit: BrandKit, status: str) -> BrandKit:
         kit.status = status
         await self.session.commit()
@@ -68,6 +87,7 @@ class BrandVisualRepository:
         assets = await self.list_brand_kit_assets(kit.id)
         return {
             "id": kit.id,
+            "naming_asset_id": kit.naming_asset_id,
             "name": kit.name,
             "moral": kit.moral,
             "industry": kit.industry,

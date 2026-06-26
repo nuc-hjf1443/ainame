@@ -75,6 +75,16 @@ class UserMembership(Base):
     updated_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
+class UserQuotaBalance(Base):
+    __tablename__ = "user_quota_balances"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), unique=True, index=True)
+    naming_balance: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 class DailyQuotaUsage(Base):
     __tablename__ = "daily_quota_usage"
     __table_args__ = (UniqueConstraint("user_id", "usage_date", name="uq_daily_quota_user_date"),)

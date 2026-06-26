@@ -24,7 +24,7 @@ async def list_membership_packages(session: AsyncSession = Depends(get_session))
 async def create_membership_order(data: MembershipOrderIn, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)):
     order = await MembershipRepository(session).create_order(user.id, data.package_id)
     if not order:
-        raise HTTPException(404, detail="VIP 套餐不存在或已下架")
+        raise HTTPException(404, detail="充值套餐不存在或已下架")
     return order
 
 
@@ -37,7 +37,7 @@ async def pay_membership_order(
 ):
     order, membership = await MembershipRepository(session).pay_order(order_id, user.id)
     if not order:
-        raise HTTPException(409, detail="会员订单不存在或不能支付")
+        raise HTTPException(409, detail="充值订单不存在或不能支付")
     return await build_profile(user, session)
 
 
@@ -50,8 +50,10 @@ async def build_profile(user: User, session: AsyncSession):
         "id": user.id, "username": user.username, "email": user.email, "bio": user.bio,
         "role": user.role, "account_type": account_type, "expert_status": expert.status if expert else None,
         "created_time": user.created_time, "is_vip": snapshot["is_vip"],
+        "vip_package_code": package.package_code if package else None,
         "vip_package_name": package.name if package else None,
         "vip_expires_at": membership.end_time if membership else None,
+        "naming_balance": snapshot["naming_balance"],
         "naming_quota": {"used": snapshot["naming_used"], "limit": snapshot["naming_limit"], "remaining": max(0, snapshot["naming_limit"] - snapshot["naming_used"])},
         "visual_quota": {"used": snapshot["visual_used"], "limit": snapshot["visual_limit"], "remaining": max(0, snapshot["visual_limit"] - snapshot["visual_used"])},
     }

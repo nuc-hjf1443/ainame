@@ -123,7 +123,9 @@ export default {
   generateVisual: (data) => request("/visual/generate", { method: 'POST', data }),
   getVisualStatus: (visualId) => request(`/visual/${visualId}`, { method: 'GET' }),
   createBrandKit: (data) => request('/visual/kits', { method: 'POST', data }),
+  getBrandKits: (page = 1, pageSize = 20) => request(`/visual/kits?page=${page}&page_size=${pageSize}`, { method: 'GET' }),
   getBrandKit: (kitId) => request(`/visual/kits/${kitId}`, { method: 'GET' }),
+  deleteBrandKit: (kitId) => request(`/visual/kits/${kitId}`, { method: 'DELETE' }),
 
   // ================= 5. 个人数字资产 =================
   saveNameAsset: (data) => request('/me/assets/names', { method: 'POST', data }),

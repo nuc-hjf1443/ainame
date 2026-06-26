@@ -10,6 +10,7 @@ class MembershipPackageOut(BaseModel):
     package_code: str
     name: str
     price: Decimal
+    api_quota: int
     duration_days: int
     naming_daily_quota: int
     visual_daily_quota: int
@@ -45,8 +46,10 @@ class MyProfileOut(BaseModel):
     expert_status: str | None
     created_time: datetime
     is_vip: bool
+    vip_package_code: str | None
     vip_package_name: str | None
     vip_expires_at: datetime | None
+    naming_balance: int
     naming_quota: QuotaOut
     visual_quota: QuotaOut
 

@@ -36,6 +36,7 @@ async def prepare_brand_kit(
     slogan = f"{data.name}，让品牌被看见"
     kit = BrandKit(
         user_id=user_id,
+        naming_asset_id=data.naming_asset_id,
         thread_id=data.thread_id,
         name=data.name,
         moral=data.moral,

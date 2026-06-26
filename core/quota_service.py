@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.finance import DailyQuotaUsage, PackageConfig
+from models.finance import DailyQuotaUsage, PackageConfig, UserQuotaBalance
 from models.user import User
 from models.visual import BrandKit, BrandVisual
 from repository.membership_repo import MembershipRepository
@@ -25,12 +25,14 @@ async def quota_snapshot(session: AsyncSession, user_id: int):
     membership = await repository.get_active_membership(user_id)
     package = await session.get(PackageConfig, membership.package_id) if membership else None
     usage = await repository.get_usage(user_id, current_usage_date())
+    balance = await repository.get_quota_balance(user_id)
     naming_limit = package.naming_daily_quota if package else FREE_NAMING_DAILY_QUOTA
     visual_limit = package.visual_daily_quota if package else FREE_VISUAL_DAILY_QUOTA
     return {
         "is_vip": bool(membership),
         "membership": membership,
         "package": package,
+        "naming_balance": balance.naming_balance if balance else 0,
         "naming_used": usage.naming_used if usage else 0,
         "naming_limit": naming_limit,
         "visual_used": usage.visual_used if usage else 0,
@@ -56,9 +58,18 @@ async def reserve_quota(session: AsyncSession, user_id: int, feature: str):
     limit = snapshot["naming_limit"] if feature == "NAMING" else snapshot["visual_limit"]
     used = getattr(usage, used_field)
     if used >= limit:
+        if feature == "NAMING":
+            balance = await session.scalar(
+                select(UserQuotaBalance).where(UserQuotaBalance.user_id == user_id).with_for_update()
+            )
+            if balance and balance.naming_balance > 0:
+                balance.naming_balance -= 1
+                await session.commit()
+                return {"source": "BALANCE"}
         await session.rollback()
         label = "智能起名" if feature == "NAMING" else "视觉生成"
-        raise HTTPException(429, detail=f"今日{label}额度已用完（{used}/{limit}），请升级或续费 VIP")
+        action = "请购买起名次数包或升级 VIP" if feature == "NAMING" else "请升级或续费 VIP"
+        raise HTTPException(429, detail=f"今日{label}额度已用完（{used}/{limit}），{action}")
     setattr(usage, used_field, used + 1)
     await session.commit()
     return usage_date
@@ -68,8 +79,16 @@ async def refund_quota(
         session: AsyncSession,
         user_id: int,
         feature: str,
-        usage_date: date | None = None,
+        usage_date: date | dict | None = None,
 ):
+    if isinstance(usage_date, dict) and usage_date.get("source") == "BALANCE":
+        balance = await session.scalar(
+            select(UserQuotaBalance).where(UserQuotaBalance.user_id == user_id).with_for_update()
+        )
+        if balance:
+            balance.naming_balance += 1
+            await session.commit()
+        return
     usage = await session.scalar(
         select(DailyQuotaUsage).where(
             DailyQuotaUsage.user_id == user_id,
