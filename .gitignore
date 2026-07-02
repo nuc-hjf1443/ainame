@@ -25,10 +25,9 @@ env/
 .DS_Store
 Thumbs.db
 
-# Local design docs
-docs/*
-!docs/PROJECT_ROADMAP.md
-!docs/CURRENT_ARCHITECTURE.md
+# Local docs and design assets
+docs/
+design/
 
 # Local runtime data
 uploads/
