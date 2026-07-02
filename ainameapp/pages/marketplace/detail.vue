@@ -8,7 +8,58 @@
   </view>
 </template>
 <script setup>
-import{computed,reactive,ref}from'vue';import{onLoad}from'@dcloudio/uni-app';import http from '@/http/http.js';const expert=ref(null),packages=ref([]),assets=ref([]),loading=ref(false);const form=reactive({package_id:null,naming_asset_id:null,requirements:''});const typeLabel=computed(()=>expert.value?.expert_type==='CULTURE_MASTER'?'国学命名':'品牌咨询');const assetLabels=computed(()=>assets.value.map(i=>`${i.name} · ${i.category}`));const selectedAssetLabel=computed(()=>assets.value.find(i=>i.id===form.naming_asset_id)?.name||'请选择已收藏的名字');const createOrder=async()=>{if(!uni.getStorageSync('token'))return uni.navigateTo({url:'/pages/login/login'});if(!form.package_id||!form.naming_asset_id||form.requirements.trim().length<5)return uni.showToast({title:'请选择套餐、名字并填写需求',icon:'none'});loading.value=true;try{const order=await http.createExpertOrder({expert_id:expert.value.id,...form});uni.showModal({title:'订单已创建',content:`应付 ¥${order.amount}，是否模拟支付？`,success:async r=>{if(r.confirm){await http.payExpertOrder(order.id);uni.reLaunch({url:'/pages/assets/index?tab=orders'})}}})}finally{loading.value=false}};onLoad(async q=>{expert.value=await http.getExpert(Number(q.id));packages.value=await http.getExpertPackages(expert.value.expert_type);if(uni.getStorageSync('token'))assets.value=(await http.getNameAssets()).items});
+import { computed, reactive, ref } from 'vue';
+import { onLoad } from '@dcloudio/uni-app';
+import http from '@/http/http.js';
+
+const expert = ref(null);
+const packages = ref([]);
+const assets = ref([]);
+const loading = ref(false);
+const form = reactive({ package_id: null, naming_asset_id: null, requirements: '' });
+const typeLabel = computed(() => expert.value?.expert_type === 'CULTURE_MASTER' ? '国学命名' : '品牌咨询');
+const assetLabels = computed(() => assets.value.map(item => `${item.name} · ${item.category}`));
+const selectedAssetLabel = computed(() => assets.value.find(item => item.id === form.naming_asset_id)?.name || '请选择已收藏的名字');
+
+const redirectToAlipay = payment => {
+  // #ifdef H5
+  window.location.href = payment.payment_url;
+  // #endif
+  // #ifndef H5
+  uni.showToast({ title: '当前仅 H5 支持支付宝沙箱支付', icon: 'none' });
+  // #endif
+};
+
+const createOrder = async () => {
+  if (!uni.getStorageSync('token')) return uni.navigateTo({ url: '/pages/login/login' });
+  if (!form.package_id || !form.naming_asset_id || form.requirements.trim().length < 5) {
+    return uni.showToast({ title: '请选择套餐、名字并填写需求', icon: 'none' });
+  }
+  loading.value = true;
+  try {
+    const order = await http.createExpertOrder({ expert_id: expert.value.id, ...form });
+    uni.showModal({
+      title: '订单已创建',
+      content: `应付 ¥${order.amount}，是否前往支付宝沙箱支付？`,
+      success: async result => {
+        if (result.confirm) {
+          const payment = await http.startExpertAlipay(order.id);
+          redirectToAlipay(payment);
+        } else {
+          uni.reLaunch({ url: '/pages/assets/index?tab=orders' });
+        }
+      }
+    });
+  } finally {
+    loading.value = false;
+  }
+};
+
+onLoad(async query => {
+  expert.value = await http.getExpert(Number(query.id));
+  packages.value = await http.getExpertPackages(expert.value.expert_type);
+  if (uni.getStorageSync('token')) assets.value = (await http.getNameAssets()).items;
+});
 </script>
 <style scoped>
 .page{padding:30rpx;background:#f5f7f6;min-height:100vh;box-sizing:border-box}.profile,.section{background:#fff;border:1px solid #e2e8f0;border-radius:8rpx;padding:28rpx;margin-bottom:20rpx}.profile{display:flex;gap:24rpx;align-items:center}.avatar{width:100rpx;height:100rpx;border-radius:50%;background:#dff4ef;color:#0f766e;display:flex;align-items:center;justify-content:center;font-size:42rpx;font-weight:700}.name{font-size:38rpx;font-weight:700}.type,.rating{color:#0f766e;font-size:24rpx;margin-top:8rpx}.section-title{font-size:30rpx;font-weight:700;margin-bottom:18rpx}.copy,.credentials{font-size:25rpx;color:#64748b;line-height:1.7;display:block}.credentials{margin-top:16rpx}.package{border:1px solid #e2e8f0;padding:20rpx;border-radius:8rpx;margin-bottom:14rpx;display:flex;justify-content:space-between;gap:20rpx}.package.selected{border-color:#0f766e;background:#ecfdf8}.package-name,.price,.days{display:block}.package-name{font-weight:700}.price{color:#dc2626;font-size:32rpx;font-weight:700}.days{font-size:22rpx;color:#64748b}.field,.area{background:#f8fafc;padding:22rpx;border:1px solid #e2e8f0;border-radius:8rpx;box-sizing:border-box;width:100%}.area{height:150rpx;margin-top:16rpx}.primary{background:#0f766e;color:#fff;border-radius:8rpx}.empty{color:#94a3b8}

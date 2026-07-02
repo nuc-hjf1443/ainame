@@ -87,6 +87,15 @@ const currentVipPackage = item => Boolean(
   )
 );
 
+const redirectToAlipay = payment => {
+  // #ifdef H5
+  window.location.href = payment.payment_url;
+  // #endif
+  // #ifndef H5
+  uni.showToast({ title: '当前仅 H5 支持支付宝沙箱支付', icon: 'none' });
+  // #endif
+};
+
 const load = async () => {
   packages.value = await http.getMembershipPackages();
   if (uni.getStorageSync('token')) profile.value = await http.getMyProfile();
@@ -97,8 +106,8 @@ const buyPackage = item => {
   if (currentVipPackage(item)) return;
   if (!uni.getStorageSync('token')) return uni.navigateTo({ url: '/pages/login/login' });
   const content = item.package_code?.startsWith('QUOTA_NAMING_')
-    ? `模拟支付 ¥${priceText(item.price)}，到账 ${item.api_quota} 次起名余额。`
-    : `模拟支付 ¥${priceText(item.price)}，${item.name} 将立即开通或顺延。`;
+    ? `支付宝沙箱支付 ¥${priceText(item.price)}，到账 ${item.api_quota} 次起名余额。`
+    : `支付宝沙箱支付 ¥${priceText(item.price)}，${item.name} 将立即开通或顺延。`;
   uni.showModal({
     title: `购买${item.name}`,
     content,
@@ -107,8 +116,8 @@ const buyPackage = item => {
       payingId.value = item.id;
       try {
         const order = await http.createMembershipOrder(item.id);
-        profile.value = await http.payMembershipOrder(order.id);
-        uni.showToast({ title: '购买成功', icon: 'success' });
+        const payment = await http.startMembershipAlipay(order.id);
+        redirectToAlipay(payment);
       } finally {
         payingId.value = null;
       }

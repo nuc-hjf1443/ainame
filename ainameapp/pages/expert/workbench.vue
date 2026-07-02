@@ -12,7 +12,7 @@
         <view class="filters"><view v-for="item in filters" :key="item.value" :class="['chip',status===item.value?'active':'']" @click="changeStatus(item.value)">{{item.label}}</view></view>
         <view v-if="!orders.length" class="empty">当前没有相关订单</view>
         <view v-for="order in orders" :key="order.id" class="order">
-          <view class="order-head"><view><text class="name">{{order.asset_name}}</text><text class="meta">{{order.package_name}} · {{order.requirements}}</text></view><text class="status">{{order.status}}</text></view>
+          <view class="order-head"><view><text class="name">{{order.asset_name}}</text><text class="meta">{{order.package_name}} · {{order.requirements}}</text></view><text class="status">{{orderStatusText(order.status)}}</text></view>
           <view v-if="order.status==='WAITING_ACCEPT'" class="actions"><button size="mini" @click="accept(order.id)">接受</button><button size="mini" class="outline" @click="reject(order.id)">拒绝</button></view>
           <view v-if="order.status==='IN_PROGRESS' || order.status==='DELIVERED'" class="editor">
             <button v-if="order.status==='IN_PROGRESS'" size="mini" class="draft" @click="draft(order)">AI 生成草稿</button>
@@ -50,6 +50,14 @@ const reportFields = [
   { key: 'recommendations', label: '优化建议' },
   { key: 'conclusion', label: '结论' }
 ];
+const orderStatusText = value => ({
+  WAITING_ACCEPT: '待接单',
+  IN_PROGRESS: '进行中',
+  DELIVERED: '已交付',
+  COMPLETED: '已完成',
+  CANCELLED: '已取消',
+  PENDING_PAYMENT: '待支付'
+}[value] || value || '-');
 const emptyReport = () => Object.fromEntries(reportFields.map(item => [item.key, '']));
 const load = async () => {
   try {

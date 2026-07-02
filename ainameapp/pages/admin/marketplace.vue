@@ -6,15 +6,15 @@
 
     <view v-if="tab === 'experts'">
       <view v-for="item in experts" :key="item.id" class="card">
-        <view class="head"><text class="name">{{ item.display_name }}</text><text>{{ item.status }}</text></view>
+        <view class="head"><text class="name">{{ item.display_name }}</text><text>{{ statusText(item.status) }}</text></view>
         <view class="copy">{{ expertTypeText(item.expert_type) }} · {{ item.years_experience }} 年经验</view>
         <view class="info-block"><text>个人简介</text><view>{{ item.bio }}</view></view>
         <view class="info-block"><text>资历证明</text><view>{{ item.credentials }}</view></view>
         <view v-if="item.review_note" class="review-note">审核备注：{{ item.review_note }}</view>
         <view class="actions">
-          <button size="mini" @click="review(item, 'APPROVED')">通过</button>
-          <button size="mini" class="danger" @click="review(item, 'REJECTED')">拒绝</button>
-          <button size="mini" class="outline" @click="review(item, 'SUSPENDED')">停用</button>
+          <button size="mini" :disabled="item.status === 'APPROVED'" @click="review(item, 'APPROVED')">通过</button>
+          <button size="mini" class="danger" :disabled="item.status === 'APPROVED' || item.status === 'REJECTED'" @click="review(item, 'REJECTED')">拒绝</button>
+          <button size="mini" class="outline" :disabled="item.status === 'SUSPENDED'" @click="review(item, 'SUSPENDED')">停用</button>
         </view>
       </view>
       <view v-if="!experts.length" class="empty">暂无专家申请</view>
@@ -49,8 +49,11 @@
 
       <view v-for="item in packages" :key="item.id" class="card">
         <view class="head"><text class="name">{{ item.name }}</text><text>¥{{ item.price }}</text></view>
-        <view class="copy">{{ item.expert_type }} · {{ item.delivery_days }}天 · {{ item.status }}</view>
-        <button size="mini" class="outline" @click="togglePackage(item)">{{ item.status === 'ACTIVE' ? '下架' : '上架' }}</button>
+        <view class="copy">{{ expertTypeText(item.expert_type) }} · {{ item.delivery_days }}天 · {{ statusText(item.status) }}</view>
+        <view class="actions">
+          <button size="mini" class="outline" @click="togglePackage(item)">{{ item.status === 'ACTIVE' ? '下架' : '上架' }}</button>
+          <button size="mini" class="danger" @click="deletePackage(item)">删除</button>
+        </view>
       </view>
       <view v-if="!packages.length" class="empty">暂无服务套餐</view>
     </view>
@@ -85,6 +88,14 @@ const typeLabels = ['国学命名', '品牌咨询'];
 const pkg = reactive({name:'',expert_type:'CULTURE_MASTER',price:'',delivery_days:'3',description:'',status:'ACTIVE'});
 const expertTypeLabel = computed(() => typeLabels[types.indexOf(pkg.expert_type)] || typeLabels[0]);
 const expertTypeText = value => typeLabels[types.indexOf(value)] || value;
+const statusText = value => ({
+  ACTIVE: '启用',
+  INACTIVE: '停用',
+  PENDING: '待审核',
+  APPROVED: '已通过',
+  REJECTED: '已拒绝',
+  SUSPENDED: '已停用'
+}[value] || value || '-');
 
 const updateField = (field, value) => { pkg[field] = value; };
 const changeExpertType = event => { pkg.expert_type = types[Number(event.detail.value)]; };
@@ -96,6 +107,7 @@ const load = async () => {
   ];
 };
 const review = async (item, status) => {
+  if (item.status === status) return;
   const title = status === 'APPROVED' ? '通过专家申请' : (status === 'REJECTED' ? '拒绝专家申请' : '停用专家身份');
   uni.showModal({
     title,
@@ -127,6 +139,17 @@ const createPackage = async () => {
   }
 };
 const togglePackage = async item => { await http.updateAdminServicePackage(item.id, {status:item.status==='ACTIVE'?'INACTIVE':'ACTIVE'}); packages.value = await http.getAdminServicePackages(); };
+const deletePackage = item => uni.showModal({
+  title: '删除服务套餐',
+  content: `确认删除「${item.name}」？已有订单引用的套餐不能删除，只能下架。`,
+  confirmColor: '#dc2626',
+  success: async result => {
+    if (!result.confirm) return;
+    await http.deleteAdminServicePackage(item.id);
+    packages.value = await http.getAdminServicePackages();
+    uni.showToast({title:'套餐已删除'});
+  }
+});
 const moderate = async (id, action) => { await http.moderateAdminReport(id, {action,resolution:action==='HIDE'?'内容已隐藏':'举报不成立'}); reports.value = (await http.getAdminCommunityReports()).items; };
 onLoad(load);
 </script>

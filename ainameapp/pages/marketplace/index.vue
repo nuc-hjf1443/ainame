@@ -143,6 +143,14 @@ const selectedPackages = computed(() => selectedExpert.value ? packages.value.fi
 const assetLabels = computed(() => assets.value.map(item => `${item.name} · ${item.category}`));
 const selectedAssetLabel = computed(() => assets.value.find(item => item.id === form.naming_asset_id)?.name || '请点击选择已收藏的名字');
 const payable = item => profile.value?.is_vip ? (Number(item.price) * 0.9).toFixed(2) : Number(item.price).toFixed(2);
+const redirectToAlipay = payment => {
+  // #ifdef H5
+  window.location.href = payment.payment_url;
+  // #endif
+  // #ifndef H5
+  uni.showToast({ title: '当前仅 H5 支持支付宝沙箱支付', icon: 'none' });
+  // #endif
+};
 
 const load = async () => {
   loading.value = true;
@@ -183,9 +191,13 @@ const createOrder = async () => {
   try {
     const order = await http.createExpertOrder(payload);
     orderOpen.value = false;
-    uni.showModal({ title: '订单已创建', content: `实付 ¥${order.amount}，是否立即模拟支付？`, success: async result => {
-      if (result.confirm) await http.payExpertOrder(order.id);
-      uni.reLaunch({ url: '/pages/assets/index?tab=orders' });
+    uni.showModal({ title: '订单已创建', content: `实付 ¥${order.amount}，是否前往支付宝沙箱支付？`, success: async result => {
+      if (result.confirm) {
+        const payment = await http.startExpertAlipay(order.id);
+        redirectToAlipay(payment);
+      } else {
+        uni.reLaunch({ url: '/pages/assets/index?tab=orders' });
+      }
     }});
   } finally { submitting.value = false; }
 };

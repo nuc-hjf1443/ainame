@@ -1,0 +1,170 @@
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.order_expiry import expire_order_if_unpaid
+from models.finance import DailyQuotaUsage, Order, PackageConfig, UserMembership, UserQuotaBalance
+from models.user import User
+
+
+class MembershipRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    VIP_CODES = {"VIP_MONTHLY", "VIP_YEARLY"}
+    NAMING_QUOTA_CODES = {"QUOTA_NAMING_30", "QUOTA_NAMING_100", "QUOTA_NAMING_300"}
+    RECHARGE_CODES = VIP_CODES | NAMING_QUOTA_CODES
+
+    async def list_packages(self):
+        result = await self.session.execute(
+            select(PackageConfig).where(
+                PackageConfig.package_code.in_(self.RECHARGE_CODES),
+                PackageConfig.status == "ACTIVE",
+            ).order_by(PackageConfig.duration_days, PackageConfig.price)
+        )
+        return result.scalars().all()
+
+    async def get_quota_balance(self, user_id: int):
+        return await self.session.scalar(select(UserQuotaBalance).where(UserQuotaBalance.user_id == user_id))
+
+    async def get_active_membership(self, user_id: int, now: datetime | None = None):
+        now = now or datetime.now()
+        return await self.session.scalar(
+            select(UserMembership).where(
+                UserMembership.user_id == user_id,
+                UserMembership.status == "ACTIVE",
+                UserMembership.end_time > now,
+            )
+        )
+
+    async def get_active_package(self, user_id: int, now: datetime | None = None):
+        membership = await self.get_active_membership(user_id, now)
+        return await self.session.get(PackageConfig, membership.package_id) if membership else None
+
+    async def get_usage(self, user_id: int, usage_date: date):
+        return await self.session.scalar(
+            select(DailyQuotaUsage).where(
+                DailyQuotaUsage.user_id == user_id,
+                DailyQuotaUsage.usage_date == usage_date,
+            )
+        )
+
+    async def create_order(self, user_id: int, package_id: int):
+        package = await self.session.scalar(
+            select(PackageConfig).where(
+                PackageConfig.id == package_id,
+                PackageConfig.package_code.in_(self.RECHARGE_CODES),
+                PackageConfig.status == "ACTIVE",
+            )
+        )
+        if not package:
+            return None
+        order = Order(
+            user_id=user_id,
+            package_id=package.id,
+            amount=package.price,
+            status="PENDING",
+            order_type="MEMBERSHIP",
+            payment_provider="MOCK",
+            payment_subject=package.name,
+        )
+        self.session.add(order)
+        await self.session.commit()
+        await self.session.refresh(order)
+        return order
+
+    async def pay_order(self, order_id: int, user_id: int):
+        order = await self.session.scalar(
+            select(Order).where(Order.id == order_id, Order.user_id == user_id).with_for_update()
+        )
+        if not order or not order.package_id:
+            return None, None
+        if await expire_order_if_unpaid(self.session, order):
+            return None, None
+        return await self.complete_order_payment(order, payment_provider="MOCK")
+
+    async def complete_order_payment(
+            self,
+            order: Order,
+            payment_provider: str = "MOCK",
+            provider_trade_no: str | None = None,
+    ):
+        if not order or not order.package_id:
+            return None, None
+        if await expire_order_if_unpaid(self.session, order):
+            return None, None
+        user_id = order.user_id
+        package = await self.session.get(PackageConfig, order.package_id)
+        if not package or package.package_code not in self.RECHARGE_CODES:
+            return None, None
+        balance = await self.session.scalar(
+            select(UserQuotaBalance).where(UserQuotaBalance.user_id == user_id).with_for_update()
+        )
+        membership = await self.session.scalar(
+            select(UserMembership).where(UserMembership.user_id == user_id).with_for_update()
+        )
+        if order.status == "PAID":
+            return order, membership
+        if order.status != "PENDING":
+            return None, None
+        now = datetime.now()
+        if package.package_code in self.NAMING_QUOTA_CODES:
+            if balance:
+                balance.naming_balance += package.api_quota
+            else:
+                balance = UserQuotaBalance(user_id=user_id, naming_balance=package.api_quota)
+                self.session.add(balance)
+        else:
+            base = membership.end_time if membership and membership.status == "ACTIVE" and membership.end_time > now else now
+            if membership:
+                if membership.end_time <= now:
+                    membership.start_time = now
+                membership.package_id = package.id
+                membership.end_time = base + timedelta(days=package.duration_days)
+                membership.status = "ACTIVE"
+            else:
+                membership = UserMembership(
+                    user_id=user_id, package_id=package.id, start_time=now,
+                    end_time=base + timedelta(days=package.duration_days), status="ACTIVE",
+                )
+                self.session.add(membership)
+        order.order_type = order.order_type or "MEMBERSHIP"
+        order.payment_provider = payment_provider
+        if provider_trade_no:
+            order.provider_trade_no = provider_trade_no
+        order.status = "PAID"
+        order.paid_time = now
+        await self.session.commit()
+        if membership:
+            await self.session.refresh(membership)
+        return order, membership
+
+    async def gift_monthly_vip(self, user_id: int):
+        user = await self.session.get(User, user_id)
+        if not user or user.is_deleted:
+            return None
+        package = await self.session.scalar(select(PackageConfig).where(PackageConfig.package_code == "VIP_MONTHLY"))
+        if not package:
+            return None
+        membership = await self.session.scalar(
+            select(UserMembership).where(UserMembership.user_id == user_id).with_for_update()
+        )
+        now = datetime.now()
+        base = membership.end_time if membership and membership.status == "ACTIVE" and membership.end_time > now else now
+        if membership:
+            membership.package_id = package.id
+            membership.start_time = membership.start_time if membership.end_time > now else now
+            membership.end_time = base + timedelta(days=30)
+            membership.status = "ACTIVE"
+        else:
+            membership = UserMembership(user_id=user_id, package_id=package.id, start_time=now, end_time=base + timedelta(days=30))
+            self.session.add(membership)
+        await self.session.commit()
+        await self.session.refresh(membership)
+        return membership
+
+    async def expert_discount(self, user_id: int) -> Decimal:
+        package = await self.get_active_package(user_id)
+        return package.expert_discount if package else Decimal("1.00")

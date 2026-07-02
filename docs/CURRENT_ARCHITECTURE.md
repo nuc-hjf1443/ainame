@@ -60,9 +60,10 @@
 | HTTP 客户端 | HTTPX |
 | 认证 | JWT、pwdlib Argon2、FastAPI `Depends()` |
 | 邮件 | fastapi-mail |
+| 支付 | 支付宝沙箱电脑网站支付/手机网站支付、RSA2 签名/验签，保留本地 mock 测试后门 |
 | 测试 | pytest、pytest-asyncio、aiosqlite |
 
-当前运行依赖至少包括 MySQL、PostgreSQL、Redis、RabbitMQ、Ollama 和外部 DeepSeek/图像生成服务。ChromaDB 数据及上传文件当前以本地目录持久化。
+当前运行依赖至少包括 MySQL、PostgreSQL、Redis、RabbitMQ、Ollama、支付宝沙箱配置和外部 DeepSeek/图像生成服务。ChromaDB 数据及上传文件当前以本地目录持久化。
 
 ## 4. 当前运行架构
 
@@ -75,6 +76,7 @@ FastAPI
    ├─ LangGraph → DeepSeek
    │      └─ AsyncPostgresSaver → PostgreSQL
    ├─ 验证码与缓存 → Redis
+   ├─ 支付 → 支付宝沙箱 H5 → notify/sync → MySQL 权益与订单状态
    ├─ RAG 上传 → RabbitMQ → rag_worker.py
    │                         └─ Ollama Embedding → ChromaDB
    └─ 视觉生成 → BackgroundTasks → 图像生成服务
@@ -101,11 +103,14 @@ FastAPI
 - 视觉状态和图像路径写回 `brand_kits`、`brand_visuals`。
 - 当前没有独立视觉 Worker，也未使用 ARQ。
 
-### 4.4 会员与模拟支付
+### 4.4 会员、支付与退款
 
-- 套餐、会员、订单和每日配额保存在 MySQL。
+- 套餐、会员、订单、起名次数余额和每日配额保存在 MySQL。
 - 命名和视觉请求会预扣配额，异常时执行退款补偿。
-- 会员与专家订单的支付接口当前是状态模拟，不接收真实支付宝回调，不产生真实交易。
+- 起名请求优先消耗当日免费或会员额度；当日额度用完后，可继续扣减用户已购买的起名次数余额。
+- 会员与专家订单的主支付路径为支付宝沙箱支付；默认使用电脑网站支付，`ALIPAY_PAY_METHOD=wap` 时使用手机网站支付。支付结果以后端 `notify` 或主动 `sync` 查询为准。
+- 原 `/pay` mock 支付接口仍保留为测试后门，必须通过 `ENABLE_MOCK_PAYMENT` 显式启用。
+- 专家订单已支付后取消或拒单时，会调用支付宝沙箱退款；退款失败时保留原订单状态。
 
 ## 5. 当前 API 模块
 
@@ -119,6 +124,7 @@ FastAPI
 | `/membership`、`/me/profile` | 套餐、模拟订单、会员与个人资料 |
 | `/community` | 帖子、候选名称、投票、评论和举报 |
 | `/marketplace` | 专家、服务包、订单、报告和评价 |
+| `/payments` | 支付宝沙箱通知、回跳和主动同步 |
 | `/admin` | 用户、财务、AI 配置、知识库和审计 |
 | `/admin/marketplace` | 专家审核、服务包和报告管理 |
 
@@ -126,7 +132,7 @@ FastAPI
 
 ## 6. MySQL ORM 表结构
 
-当前 ORM 共定义 25 张业务表。以下内容描述代码中的模型，不代表目标数据库已经全部执行对应迁移。
+当前 ORM 共定义 26 张业务表。以下内容描述代码中的模型，不代表目标数据库已经全部执行对应迁移。
 
 ### 6.1 用户与认证（2 张）
 
@@ -137,15 +143,16 @@ FastAPI
 
 当前验证码接口同时使用 Redis；`email_code` 仍保留在 ORM 中，具体环境是否继续使用该表需以运行路径为准。
 
-### 6.2 会员与财务（6 张）
+### 6.2 会员与财务（7 张）
 
 | 表 | 用途 | 主要关系或约束 |
 | --- | --- | --- |
 | `package_config` | 会员套餐、价格、有效期及每日配额 | `package_code` 唯一 |
-| `orders` | 统一财务订单 | 关联 `user`，可关联 `package_config` |
+| `orders` | 统一财务订单，保存支付渠道、系统交易号、支付宝交易号和退款信息 | 关联 `user`，可关联 `package_config`；`out_trade_no` 唯一 |
 | `refund_audit` | 退款申请和审核 | 关联 `orders` |
 | `api_bill` | 功能调用、Token 和配额消耗记录 | 关联 `user` |
 | `user_memberships` | 用户当前会员权益 | `user_id` 唯一，关联 `package_config` |
+| `user_quota_balances` | 用户已购买的起名次数余额 | `user_id` 唯一；用于每日起名额度耗尽后的余额扣减 |
 | `daily_quota_usage` | 用户每日命名和视觉使用量 | `user_id + usage_date` 唯一 |
 
 ### 6.3 名称与视觉资产（3 张）
@@ -153,7 +160,7 @@ FastAPI
 | 表 | 用途 | 主要关系或约束 |
 | --- | --- | --- |
 | `naming_assets` | 用户保存的候选名称、寓意、典故和域名结果 | 关联 `user`；`user_id + thread_id + name` 唯一 |
-| `brand_kits` | 一键品牌方案和总体生成状态 | 关联 `user`，通过 `thread_id` 对应命名会话 |
+| `brand_kits` | 一键品牌方案和总体生成状态 | 关联 `user`，可关联 `naming_assets`，并通过 `thread_id` 对应命名会话 |
 | `brand_visuals` | Logo、名片等具体视觉变体 | 关联 `user` 和可选 `brand_kits`；保存任务、路径、错误及退款状态 |
 
 ### 6.4 Marketplace（5 张）
@@ -202,9 +209,10 @@ user
  │    ├─ refund_audit
  │    └─ expert_service_orders
  ├─ user_memberships ─ package_config
+ ├─ user_quota_balances
  ├─ daily_quota_usage
  ├─ naming_assets ─ expert_service_orders
- ├─ brand_kits ─ brand_visuals
+ ├─ naming_assets ─ brand_kits ─ brand_visuals
  ├─ expert_profiles ─ expert_service_orders
  └─ community_posts
        ├─ community_candidates ─ naming_assets
@@ -230,7 +238,7 @@ expert_service_orders
 | 文件存储 | 本地 `uploads/` 和 ChromaDB 目录 | S3 兼容对象存储和受管理持久卷 |
 | 域名校验 | 自建 `.com` WHOIS 查询 | 稳定供应商，覆盖 `.com/.cn/.ai` |
 | 商标校验 | 未实现 | 接入一家供应商进行风险预估 |
-| 支付 | 本地状态模拟 | 第一年度仍为支付宝模拟支付，不包含真实资金交易 |
+| 支付 | 支付宝沙箱支付为主路径，保留本地状态模拟测试后门 | 第一年度仍为支付宝沙箱/模拟支付，不包含真实资金交易 |
 | Marketplace | 已有基础数据模型、接口和前端页面 | 后半年补齐审核、交付、申诉和试运营闭环 |
 | B 端 PaaS | 未实现 | 第一年度只预留接口设计，不正式上线 |
 | Growth | 未实现 | 第一年度不建设佣金结算 |
@@ -243,6 +251,7 @@ expert_service_orders
 - 命名调用处于 HTTP 请求周期内，模型延迟会直接影响接口响应时间。
 - CORS 当前为开放配置，适合本地开发，不应直接用于正式部署。
 - 本地上传目录与 ChromaDB 不适合多实例共享。
+- 支付宝沙箱 `notify_url` 必须是支付宝可访问的公网地址；本地联调需要内网穿透或测试域名。
 - 当前表中大量业务状态使用字符串表示，状态转换规则主要由 Router、Service 和 Repository 共同约束。
 
 ## 10. 文档维护规则

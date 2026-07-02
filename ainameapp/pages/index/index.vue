@@ -262,6 +262,15 @@ const switchCategory = (cat) => {
   persistWorkbench();
 };
 
+const redirectToAlipay = payment => {
+  // #ifdef H5
+  window.location.href = payment.payment_url;
+  // #endif
+  // #ifndef H5
+  uni.showToast({ title: '当前仅 H5 支持支付宝沙箱支付', icon: 'none' });
+  // #endif
+};
+
 const saveName = async (item, index) => {
   if (!token.value) return uni.navigateTo({ url: '/pages/login/login' });
   if (savedAssets.value[index]) return;
@@ -396,10 +405,14 @@ const createPrecisionOrder = async () => {
     orderOpen.value = false;
     uni.showModal({
       title: '订单已创建',
-      content: `实付 ¥${order.amount}，是否立即模拟支付？`,
+      content: `实付 ¥${order.amount}，是否前往支付宝沙箱支付？`,
       success: async result => {
-        if (result.confirm) await http.payExpertOrder(order.id);
-        uni.redirectTo({ url: '/pages/assets/index?tab=orders' });
+        if (result.confirm) {
+          const payment = await http.startExpertAlipay(order.id);
+          redirectToAlipay(payment);
+        } else {
+          uni.redirectTo({ url: '/pages/assets/index?tab=orders' });
+        }
       }
     });
   } finally {

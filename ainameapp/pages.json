@@ -65,6 +65,12 @@
 			}
 		},
 		{
+			"path": "pages/payment/result",
+			"style": {
+				"navigationBarTitleText": "支付结果"
+			}
+		},
+		{
 			"path": "pages/assets/index",
 			"style": {
 				"navigationBarTitleText": "资产中心",

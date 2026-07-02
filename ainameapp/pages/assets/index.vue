@@ -75,12 +75,15 @@
                 <view class="asset-name">{{ item.asset_name }}</view>
                 <view class="muted">{{ item.expert_name }} · {{ item.package_name }} · 实付 ¥{{ item.amount }}</view>
               </view>
-              <text class="status">{{ item.status }}</text>
+              <text class="status">{{ orderStatusText(item.status) }}</text>
             </view>
             <view class="muted">需求：{{ item.requirements }}</view>
             <view class="actions">
-              <button v-if="item.status === 'PENDING_PAYMENT'" size="mini" class="primary-mini" @click="pay(item.id)">模拟支付</button>
+              <button v-if="item.status === 'PENDING_PAYMENT'" size="mini" class="primary-mini" @click="pay(item.id)">支付宝支付</button>
+              <button v-if="item.status === 'PENDING_PAYMENT' && item.out_trade_no" size="mini" class="outline-mini" @click="syncOrderPayment(item)">刷新支付状态</button>
+              <button v-if="canCancel(item)" size="mini" class="outline-mini" @click="cancel(item)">取消订单</button>
               <button v-if="item.status === 'DELIVERED'" size="mini" class="primary-mini" @click="complete(item.id)">确认完成</button>
+              <button v-if="item.status === 'COMPLETED' && !item.reviewed" size="mini" class="primary-mini" @click="openReview(item)">评价专家</button>
             </view>
             <view v-if="item.report" class="report">{{ item.report.conclusion }}</view>
           </view>
@@ -110,6 +113,24 @@
           <button class="primary" :loading="submitting" @click="createOrder">创建订单并支付</button>
         </view>
       </view>
+
+      <view v-if="reviewOpen" class="overlay" @click="closeReview">
+        <view class="sheet review-sheet" @click.stop>
+          <view class="sheet-title">评价「{{ reviewOrder?.expert_name }}」</view>
+          <view class="field-label">服务评分</view>
+          <view class="rating-row">
+            <view v-for="score in ratings" :key="score" :class="['rating-chip', reviewForm.rating === score ? 'selected' : '']" @click="reviewForm.rating = score">
+              {{ score }} 星
+            </view>
+          </view>
+          <view class="field-label">评价内容</view>
+          <textarea class="form-area" :value="reviewForm.content" placeholder="可以补充专家分析是否专业、交付是否清晰（可选）" @input="reviewForm.content = $event.detail.value" />
+          <view class="dialog-actions">
+            <button class="outline" @click="closeReview">取消</button>
+            <button class="primary" :loading="reviewSubmitting" @click="submitReview">提交评价</button>
+          </view>
+        </view>
+      </view>
     </view>
   </DashboardLayout>
 </template>
@@ -135,16 +156,43 @@ const orderOpen = ref(false);
 const orderAsset = ref(null);
 const selectedExpert = ref(null);
 const submitting = ref(false);
+const reviewOpen = ref(false);
+const reviewSubmitting = ref(false);
+const reviewOrder = ref(null);
 const orderForm = reactive({ package_id: null, requirements: '' });
+const reviewForm = reactive({ rating: 5, content: '' });
 
 const tabs = [{ label: '名字资产', value: 'names' }, { label: '企业视觉方案', value: 'kits' }, { label: '专家订单', value: 'orders' }];
 const categories = ['全部', '人名', '企业名', '宠物名'];
+const ratings = [5, 4, 3, 2, 1];
 const filteredNames = computed(() => category.value === '全部' ? names.value : names.value.filter(item => item.category === category.value));
 const selectedPackages = computed(() => selectedExpert.value ? packages.value.filter(item => item.expert_type === selectedExpert.value.expert_type) : []);
 const labelType = value => value === 'CULTURE_MASTER' ? '国学命名专家' : '品牌咨询师';
 const payable = item => profile.value?.is_vip ? (Number(item.price) * 0.9).toFixed(2) : Number(item.price).toFixed(2);
 const statusText = value => ({ PENDING: '准备中', PROCESSING: '生成中', SUCCESS: '已完成', FAILED: '失败' }[value] || value);
+const orderStatusText = value => ({
+  PENDING_PAYMENT: '待支付',
+  WAITING_ACCEPT: '待专家接单',
+  IN_PROGRESS: '精批中',
+  DELIVERED: '已交付',
+  COMPLETED: '已完成',
+  CANCELLED: '已取消'
+}[value] || value || '-');
+const paymentStatusText = value => ({
+  PENDING: '待支付',
+  PAID: '已支付',
+  CANCELLED: '已取消',
+  REFUNDED: '已退款'
+}[value] || value || '-');
 const assetLabel = asset => `${asset.asset_type === 'LOGO' ? 'Logo' : '名片'} ${asset.variant_index}`;
+const redirectToAlipay = payment => {
+  // #ifdef H5
+  window.location.href = payment.payment_url;
+  // #endif
+  // #ifndef H5
+  uni.showToast({ title: '当前仅 H5 支持支付宝沙箱支付', icon: 'none' });
+  // #endif
+};
 
 const load = async () => {
   token.value = uni.getStorageSync('token');
@@ -201,11 +249,15 @@ const createOrder = async () => {
     orderOpen.value = false;
     uni.showModal({
       title: '订单已创建',
-      content: `实付 ¥${order.amount}，是否立即模拟支付？`,
+      content: `实付 ¥${order.amount}，是否前往支付宝沙箱支付？`,
       success: async result => {
-        if (result.confirm) await http.payExpertOrder(order.id);
-        tab.value = 'orders';
-        await load();
+        if (result.confirm) {
+          const payment = await http.startExpertAlipay(order.id);
+          redirectToAlipay(payment);
+        } else {
+          tab.value = 'orders';
+          await load();
+        }
       }
     });
   } finally {
@@ -227,8 +279,48 @@ const closeBrandKit = async () => { brandKitDraft.value = null; await load(); };
 const previewKit = (kit, url) => uni.previewImage({ current: url, urls: kit.assets.filter(item => item.image_url).map(item => item.image_url) });
 const removeName = id => uni.showModal({ title: '取消收藏', content: '确认取消收藏这个名字？', success: async result => { if (result.confirm) { await http.deleteNameAsset(id); await load(); } } });
 const deleteKit = kit => uni.showModal({ title: '删除品牌视觉方案', content: `确认删除「${kit.name}」整套方案及其 Logo/名片？`, success: async result => { if (result.confirm) { await http.deleteBrandKit(kit.id); await load(); } } });
-const pay = async id => { await http.payExpertOrder(id); await load(); };
+const pay = async id => { const payment = await http.startExpertAlipay(id); redirectToAlipay(payment); };
+const syncOrderPayment = async order => {
+  const result = await http.syncAlipayOrder(order.out_trade_no);
+  uni.showToast({ title: result.status === 'PAID' ? '支付已同步' : `当前状态：${paymentStatusText(result.status)}`, icon: 'none' });
+  await load();
+};
 const complete = async id => { await http.completeExpertOrder(id); await load(); };
+const canCancel = order => ['PENDING_PAYMENT', 'WAITING_ACCEPT'].includes(order.status);
+const cancel = order => uni.showModal({
+  title: '取消订单',
+  content: order.status === 'WAITING_ACCEPT' ? '订单已支付，取消后会尝试原路退款，确认继续？' : '确认取消这笔待支付订单？',
+  success: async result => {
+    if (result.confirm) {
+      await http.cancelExpertOrder(order.id);
+      await load();
+    }
+  }
+});
+const openReview = order => {
+  reviewOrder.value = order;
+  Object.assign(reviewForm, { rating: 5, content: '' });
+  reviewOpen.value = true;
+};
+const closeReview = () => {
+  reviewOpen.value = false;
+  reviewOrder.value = null;
+};
+const submitReview = async () => {
+  if (!reviewOrder.value) return;
+  reviewSubmitting.value = true;
+  try {
+    await http.reviewExpertOrder(reviewOrder.value.id, {
+      rating: reviewForm.rating,
+      content: reviewForm.content.trim() || null
+    });
+    uni.showToast({ title: '评价已提交' });
+    closeReview();
+    await load();
+  } finally {
+    reviewSubmitting.value = false;
+  }
+};
 const goLogin = () => uni.navigateTo({ url: '/pages/login/login' });
 
 onLoad(query => { if (query.tab) tab.value = query.tab; });
@@ -237,4 +329,14 @@ onShow(load);
 
 <style scoped>
 .assets-page{min-height:100%;color:#111827}.login-panel,.panel{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:32rpx;margin-bottom:28rpx}.login-panel{text-align:center;padding:100rpx 30rpx}.page-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:28rpx}.page-title{font-size:44rpx;font-weight:800}.muted{display:block;color:#6b7280;font-size:24rpx;line-height:1.6;margin-top:6rpx}.tabs,.category-tabs{display:flex;gap:14rpx;overflow-x:auto;margin-bottom:24rpx}.tab,.category-tab{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16rpx 28rpx;white-space:nowrap;color:#4b5563;font-size:27rpx}.tab.active,.category-tab.active{background:#eef2ff;color:#4f46e5;border-color:#c7d2fe;font-weight:700}.asset-list{display:flex;flex-direction:column;gap:18rpx}.name-card,.order-card,.kit-card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:28rpx}.name-card{display:flex;justify-content:space-between;gap:24rpx}.name-main{min-width:0}.asset-name{font-size:32rpx;font-weight:800;color:#111827}.reference{font-size:24rpx;color:#4b5563;margin-top:10rpx}.actions{display:flex;gap:12rpx;flex-wrap:wrap;align-items:center}.actions button{margin:0}.primary,.primary-mini{background:#4f46e5;color:#fff}.dark-mini{background:#111827;color:#fff}.outline-mini{background:#fff;color:#4b5563;border:1px solid #d1d5db}.danger-btn{background:#fff;color:#dc2626;border:1px solid #fecaca;border-radius:8px;margin-top:24rpx}.kit-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24rpx}.kit-head,.order-head{display:flex;justify-content:space-between;gap:20rpx;align-items:flex-start;margin-bottom:18rpx}.status{font-size:23rpx;color:#4f46e5;background:#eef2ff;border-radius:999px;padding:8rpx 16rpx;white-space:nowrap}.status.FAILED{color:#dc2626;background:#fee2e2}.kit-info{display:grid;grid-template-columns:repeat(2,1fr);gap:12rpx;border-top:1px solid #f3f4f6;border-bottom:1px solid #f3f4f6;padding:20rpx 0;margin:18rpx 0}.kit-info view{display:flex;justify-content:space-between;gap:16rpx;font-size:24rpx}.kit-info text:first-child{color:#6b7280}.visual-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12rpx}.visual-tile{background:#f9fafb;border:1px solid #eef0f4;min-width:0}.visual-tile image,.visual-placeholder{width:100%;height:160rpx}.visual-placeholder{display:flex;align-items:center;justify-content:center;color:#9ca3af}.visual-label{text-align:center;color:#4b5563;font-size:22rpx;padding:10rpx}.report{background:#f9fafb;border-radius:8px;padding:20rpx;margin-top:16rpx;color:#374151}.empty{text-align:center;color:#9ca3af;padding:60rpx}.overlay{position:fixed;inset:0;background:rgba(17,24,39,.48);z-index:200;display:flex;align-items:center;justify-content:center;padding:36rpx}.sheet{width:min(920rpx,100%);max-height:86vh;overflow-y:auto;background:#fff;border-radius:8px;padding:34rpx}.sheet-title{font-size:34rpx;font-weight:800;margin-bottom:24rpx}.expert-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16rpx}.expert-card,.package-card{border:1px solid #e5e7eb;border-radius:8px;padding:20rpx}.expert-card.selected,.package-card.selected{border-color:#4f46e5;background:#eef2ff}.expert-name{font-weight:800}.field-label{font-size:24rpx;color:#6b7280;margin:24rpx 0 12rpx}.package-list{display:flex;flex-direction:column;gap:12rpx}.package-card{display:flex;justify-content:space-between}.form-area{width:100%;height:160rpx;box-sizing:border-box;border:1px solid #d1d5db;border-radius:8px;padding:20rpx;font-size:27rpx}.primary{border-radius:8px;margin-top:24rpx}@media(max-width:900px){.kit-grid,.expert-grid{grid-template-columns:1fr}.name-card{flex-direction:column}.visual-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+
+<style scoped>
+.outline{background:#fff;color:#4b5563;border:1px solid #d1d5db;border-radius:8px}
+.review-sheet{width:min(720rpx,100%)}
+.rating-row{display:flex;gap:12rpx;flex-wrap:wrap}
+.rating-chip{padding:14rpx 22rpx;border:1px solid #d1d5db;border-radius:999px;color:#4b5563;background:#fff;font-size:26rpx}
+.rating-chip.selected{background:#eef2ff;border-color:#4f46e5;color:#4f46e5;font-weight:700}
+.dialog-actions{display:flex;justify-content:flex-end;gap:14rpx}
+.dialog-actions button{margin:24rpx 0 0}
 </style>

@@ -136,7 +136,9 @@ export default {
   updateMyProfile: (data) => request('/me/profile', { method: 'PUT', data }),
   getMembershipPackages: () => request('/membership/packages', { method: 'GET' }),
   createMembershipOrder: (packageId) => request('/membership/orders', { method: 'POST', data: { package_id: packageId } }),
+  startMembershipAlipay: (orderId) => request(`/membership/orders/${orderId}/alipay`, { method: 'POST' }),
   payMembershipOrder: (orderId) => request(`/membership/orders/${orderId}/pay`, { method: 'PUT' }),
+  syncAlipayOrder: (outTradeNo) => request(`/payments/alipay/orders/${encodeURIComponent(outTradeNo)}/sync`, { method: 'POST' }),
 
   // ================= 6. 灵感社区 =================
   getCommunityPosts: (page = 1, sort = 'latest', category = '') => request(`/community/posts?page=${page}&page_size=20&sort=${sort}${category ? `&category=${encodeURIComponent(category)}` : ''}`, { method: 'GET' }),
@@ -156,6 +158,7 @@ export default {
   getMyExpertProfile: () => request('/marketplace/expert-application/me', { method: 'GET', silent: true }),
   createExpertOrder: (data) => request('/marketplace/orders', { method: 'POST', data }),
   getMyExpertOrders: (page = 1) => request(`/marketplace/orders?page=${page}&page_size=20`, { method: 'GET' }),
+  startExpertAlipay: (orderId) => request(`/marketplace/orders/${orderId}/alipay`, { method: 'POST' }),
   payExpertOrder: (orderId) => request(`/marketplace/orders/${orderId}/pay`, { method: 'PUT' }),
   cancelExpertOrder: (orderId) => request(`/marketplace/orders/${orderId}/cancel`, { method: 'PUT' }),
   completeExpertOrder: (orderId) => request(`/marketplace/orders/${orderId}/complete`, { method: 'PUT' }),
@@ -174,7 +177,13 @@ export default {
   resetAdminUserPassword: (userId, password) => request(`/admin/users/${userId}/password`, { method: 'PUT', data: { password } }),
   deleteAdminUser: (userId) => request(`/admin/users/${userId}`, { method: 'DELETE' }),
   giftAdminUserVip: (userId) => request(`/admin/marketplace/users/${userId}/gift-vip`, { method: 'POST' }),
-  getAdminOrders: (page = 1, pageSize = 20) => request(`/admin/finance/orders?page=${page}&page_size=${pageSize}`, { method: 'GET' }),
+  getAdminOrders: (page = 1, pageSize = 20, filters = {}) => {
+    const query = [`page=${page}`, `page_size=${pageSize}`];
+    ['status', 'order_type', 'payment_provider', 'keyword'].forEach(key => {
+      if (filters[key]) query.push(`${key}=${encodeURIComponent(filters[key])}`);
+    });
+    return request(`/admin/finance/orders?${query.join('&')}`, { method: 'GET' });
+  },
   reviewRefund: (refundId, data) => request(`/admin/finance/refunds/${refundId}`, { method: 'PUT', data }),
   getAdminAgents: () => request("/admin/ai/agents", { method: 'GET' }),
   updateAdminAgent: (agentId, data) => request(`/admin/ai/agents/${agentId}`, { method: 'PUT', data }),
@@ -185,6 +194,7 @@ export default {
   getAdminServicePackages: () => request('/admin/marketplace/packages', { method: 'GET' }),
   createAdminServicePackage: (data) => request('/admin/marketplace/packages', { method: 'POST', data }),
   updateAdminServicePackage: (packageId, data) => request(`/admin/marketplace/packages/${packageId}`, { method: 'PUT', data }),
+  deleteAdminServicePackage: (packageId) => request(`/admin/marketplace/packages/${packageId}`, { method: 'DELETE' }),
   getAdminCommunityReports: (status = 'PENDING') => request(`/admin/marketplace/reports?page=1&page_size=100&status=${status}`, { method: 'GET' }),
   moderateAdminReport: (reportId, data) => request(`/admin/marketplace/reports/${reportId}`, { method: 'PUT', data })
 };
