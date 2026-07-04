@@ -4,7 +4,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.order_expiry import expire_order_if_unpaid
+from services.order_expiry import expire_order_if_unpaid
 from models.finance import DailyQuotaUsage, Order, PackageConfig, UserMembership, UserQuotaBalance
 from models.user import User
 

@@ -4,7 +4,7 @@ from schemas.name_schemas import NameIn, NameOutSchema
 # from core.nametools import generate_names
 from core.workflow import generate_naming, generate_naming_v2
 from core.auth import AuthHandler
-from core.quota_service import refund_quota, reserve_quota
+from services.quota_service import refund_quota, reserve_quota
 from dependencies import get_current_user, get_session
 from models.user import User
 

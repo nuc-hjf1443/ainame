@@ -4,8 +4,8 @@ from decimal import Decimal
 import pytest
 from fastapi import HTTPException
 
-from core import quota_service
-from core.quota_service import (
+from services import quota_service
+from services.quota_service import (
     current_usage_date,
     quota_snapshot,
     refund_brand_kit_quota_once,

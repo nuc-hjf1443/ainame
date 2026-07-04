@@ -3,8 +3,8 @@ from datetime import date
 import httpx
 import pytest
 
-from core import visual_service
-from core.brand_kit_service import prepare_brand_kit
+from services import visual_service
+from services.brand_kit_service import prepare_brand_kit
 from models.asset import NamingAsset
 from models.user import User
 from repository.visual_repo import BrandVisualRepository

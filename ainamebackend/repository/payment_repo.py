@@ -5,8 +5,8 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.alipay_service import AlipayClient, AlipayError, AlipayTradeResult
-from core.order_expiry import expire_order_if_unpaid
+from services.alipay_service import AlipayClient, AlipayError, AlipayTradeResult
+from services.order_expiry import expire_order_if_unpaid
 from models.finance import Order, RefundAudit
 from models.marketplace import ExpertServiceOrder
 from repository.membership_repo import MembershipRepository

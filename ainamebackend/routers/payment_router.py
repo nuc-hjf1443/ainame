@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.status import HTTP_404_NOT_FOUND, HTTP_502_BAD_GATEWAY
 
 import settings
-from core.alipay_service import AlipayClient, AlipayError, AlipayTradeResult
+from services.alipay_service import AlipayClient, AlipayError, AlipayTradeResult
 from dependencies import get_current_user, get_session
 from models.user import User
 from repository.payment_repo import PaymentRepository

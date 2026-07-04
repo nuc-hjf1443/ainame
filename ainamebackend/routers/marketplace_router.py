@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.status import HTTP_502_BAD_GATEWAY
 
-from core.alipay_service import AlipayClient, AlipayError
-from core.marketplace_service import generate_expert_report_draft
+from services.alipay_service import AlipayClient, AlipayError
+from services.marketplace_service import generate_expert_report_draft
 from dependencies import get_current_user, get_session, require_mock_payment_enabled
 from models.user import User
 from repository.asset_repo import AssetRepository

@@ -5,8 +5,8 @@ from typing import Any
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio.session import AsyncSession
 
-from core.alipay_service import AlipayClient
-from core.order_expiry import expire_pending_orders
+from services.alipay_service import AlipayClient
+from services.order_expiry import expire_pending_orders
 from models.ai_asset import AgentConfig, KnowledgeBase
 from models.audit import SensitiveWordInterception
 from models.finance import Order, PackageConfig, RefundAudit

@@ -3,8 +3,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.status import HTTP_502_BAD_GATEWAY
 
-from core.alipay_service import AlipayClient, AlipayError
-from core.quota_service import quota_snapshot
+from services.alipay_service import AlipayClient, AlipayError
+from services.quota_service import quota_snapshot
 from dependencies import get_current_user, get_session, require_mock_payment_enabled
 from models.marketplace import ExpertProfile
 from models.user import User

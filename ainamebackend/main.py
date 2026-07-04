@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from core.workflow import init_workflow_graph, close_workflow_graph
-from core.order_expiry import expire_pending_orders
+from services.order_expiry import expire_pending_orders
 from models import AsyncSessionFactory
 
 

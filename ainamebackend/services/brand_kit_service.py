@@ -4,8 +4,8 @@ from models import AsyncSessionFactory
 from models.visual import BrandKit, BrandVisual
 from repository.visual_repo import BrandVisualRepository
 from core.aigc_tools import submit_visual_task
-from core.quota_service import refund_brand_kit_quota_once
-from core.visual_service import persist_visual_image, refresh_brand_visual_status
+from services.quota_service import refund_brand_kit_quota_once
+from services.visual_service import persist_visual_image, refresh_brand_visual_status
 from schemas.visual_schemas import BrandKitCreateIn
 
 

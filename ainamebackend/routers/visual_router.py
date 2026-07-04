@@ -3,9 +3,9 @@ from sqlalchemy.ext.asyncio.session import AsyncSession
 from starlette.status import HTTP_404_NOT_FOUND
 
 from core.auth import AuthHandler
-from core.brand_kit_service import prepare_brand_kit, process_brand_kit, refresh_brand_kit
-from core.quota_service import refund_brand_kit_quota_once, refund_quota, refund_visual_quota_once, reserve_quota
-from core.visual_service import create_brand_visual, refresh_brand_visual_status
+from services.brand_kit_service import prepare_brand_kit, process_brand_kit, refresh_brand_kit
+from services.quota_service import refund_brand_kit_quota_once, refund_quota, refund_visual_quota_once, reserve_quota
+from services.visual_service import create_brand_visual, refresh_brand_visual_status
 from dependencies import get_current_user, get_session
 from models.user import User
 from repository.asset_repo import AssetRepository

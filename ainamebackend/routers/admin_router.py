@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio.session import AsyncSession
 from starlette.status import HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND, HTTP_502_BAD_GATEWAY
 
-from core.alipay_service import AlipayError
+from services.alipay_service import AlipayError
 from dependencies import get_session, require_admin
 from models.user import User
 from repository.admin_repo import AdminRepository

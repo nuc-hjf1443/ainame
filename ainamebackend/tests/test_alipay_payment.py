@@ -6,7 +6,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from core.alipay_service import AlipayClient, AlipayError, AlipayTradeResult
+from services.alipay_service import AlipayClient, AlipayError, AlipayTradeResult
 from models.asset import NamingAsset
 from models.finance import Order, PackageConfig, UserQuotaBalance
 from models.marketplace import ExpertProfile, ExpertServicePackage

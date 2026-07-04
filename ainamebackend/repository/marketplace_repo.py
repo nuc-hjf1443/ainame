@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.asset import NamingAsset
 from models.finance import Order
 from models.marketplace import ExpertProfile, ExpertReport, ExpertReview, ExpertServiceOrder, ExpertServicePackage
-from core.order_expiry import expire_order_if_unpaid, expire_pending_orders
+from services.order_expiry import expire_order_if_unpaid, expire_pending_orders
 from repository.membership_repo import MembershipRepository
 
 
