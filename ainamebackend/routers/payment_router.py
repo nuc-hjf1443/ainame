@@ -1,19 +1,53 @@
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.status import HTTP_404_NOT_FOUND, HTTP_502_BAD_GATEWAY
 
 import settings
 from services.alipay_service import AlipayClient, AlipayError, AlipayTradeResult
+from core.payment_urls import alipay_notify_url, alipay_return_url
 from dependencies import get_current_user, get_session
 from models.user import User
 from repository.payment_repo import PaymentRepository
-from schemas.payment_schemas import PaymentSyncOut
+from schemas.payment_schemas import AlipayPaymentOut, MyPaymentOrderPageOut, PaymentSyncOut
 
 
 router = APIRouter(prefix="/payments", tags=["payments"])
+
+
+@router.get("/orders", response_model=MyPaymentOrderPageOut)
+async def list_my_payment_orders(
+        page: int = Query(1, ge=1),
+        page_size: int = Query(20, ge=1, le=100),
+        user: User = Depends(get_current_user),
+        session: AsyncSession = Depends(get_session),
+):
+    items, total = await PaymentRepository(session).list_user_orders(user.id, page, page_size)
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.post("/orders/{order_id}/alipay", response_model=AlipayPaymentOut)
+async def create_user_order_alipay_payment(
+        order_id: int,
+        request: Request,
+        user: User = Depends(get_current_user),
+        session: AsyncSession = Depends(get_session),
+):
+    repository = PaymentRepository(session)
+    order = await repository.prepare_user_alipay_order(order_id, user.id)
+    if not order:
+        raise HTTPException(409, detail="订单不存在、已超时或当前状态不能继续支付")
+    try:
+        payment_url = AlipayClient().build_pay_url(
+            order,
+            notify_url=alipay_notify_url(request),
+            return_url=alipay_return_url(request),
+        )
+    except AlipayError as exc:
+        raise HTTPException(status_code=HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return {"order_id": order.id, "out_trade_no": order.out_trade_no or "", "payment_url": payment_url}
 
 
 @router.post("/alipay/notify", response_class=PlainTextResponse)

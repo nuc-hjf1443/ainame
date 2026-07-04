@@ -2,13 +2,15 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from typing import Any
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.alipay_service import AlipayClient, AlipayError, AlipayTradeResult
-from services.order_expiry import expire_order_if_unpaid
-from models.finance import Order, RefundAudit
-from models.marketplace import ExpertServiceOrder
+from services.order_expiry import expire_order_if_unpaid, expire_pending_orders, order_payment_deadline
+from models.finance import Order, PackageConfig, RefundAudit
+from models.marketplace import ExpertServiceOrder, ExpertServicePackage
 from repository.membership_repo import MembershipRepository
 
 
@@ -63,6 +65,78 @@ class PaymentRepository:
             select(Order).where(Order.out_trade_no == out_trade_no, Order.user_id == user_id)
         )
 
+    async def list_user_orders(self, user_id: int, page: int, page_size: int):
+        await expire_pending_orders(self.session)
+        total = await self.session.scalar(
+            select(func.count()).select_from(Order).where(Order.user_id == user_id)
+        ) or 0
+        result = await self.session.execute(
+            select(Order)
+            .where(Order.user_id == user_id)
+            .order_by(Order.created_time.desc(), Order.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        orders = result.scalars().all()
+        return [await self._user_order_payload(order) for order in orders], total
+
+    async def prepare_user_alipay_order(self, order_id: int, user_id: int) -> Order | None:
+        order = await self.session.scalar(
+            select(Order).where(Order.id == order_id, Order.user_id == user_id).with_for_update()
+        )
+        if order and await expire_order_if_unpaid(self.session, order):
+            return None
+        if not order or order.status != "PENDING":
+            return None
+
+        service = await self.session.scalar(
+            select(ExpertServiceOrder).where(
+                ExpertServiceOrder.finance_order_id == order.id,
+                ExpertServiceOrder.customer_id == user_id,
+            ).with_for_update()
+        )
+        if service:
+            if service.status != "PENDING_PAYMENT":
+                return None
+            order.order_type = "EXPERT_SERVICE"
+            order.payment_subject = order.payment_subject or "启名星专家服务"
+        elif order.package_id:
+            order.order_type = "MEMBERSHIP"
+            order.payment_subject = order.payment_subject or "启名星会员充值"
+        else:
+            return None
+
+        order.payment_provider = "ALIPAY_SANDBOX"
+        order.out_trade_no = order.out_trade_no or self._new_out_trade_no(order.id)
+        await self.session.commit()
+        await self.session.refresh(order)
+        return order
+
+    async def _user_order_payload(self, order: Order) -> dict[str, Any]:
+        package = await self.session.get(PackageConfig, order.package_id) if order.package_id else None
+        service = await self.session.scalar(
+            select(ExpertServiceOrder).where(ExpertServiceOrder.finance_order_id == order.id)
+        )
+        service_package = await self.session.get(ExpertServicePackage, service.package_id) if service else None
+        return {
+            "id": order.id,
+            "amount": order.amount,
+            "status": order.status,
+            "order_type": order.order_type,
+            "payment_provider": order.payment_provider,
+            "payment_subject": order.payment_subject,
+            "package_name": package.name if package else None,
+            "out_trade_no": order.out_trade_no,
+            "provider_trade_no": order.provider_trade_no,
+            "paid_time": order.paid_time,
+            "created_time": order.created_time,
+            "updated_time": order.updated_time,
+            "payment_deadline": order_payment_deadline(order) if order.status == "PENDING" else None,
+            "service_order_id": service.id if service else None,
+            "service_status": service.status if service else None,
+            "service_package_name": service_package.name if service_package else None,
+        }
+
     async def complete_alipay_payment(
             self,
             result: AlipayTradeResult,
@@ -83,19 +157,20 @@ class PaymentRepository:
                 order.provider_trade_no = result.trade_no
                 await self.session.commit()
             return order
-        if order.status != "PENDING":
+        if order.status not in {"PENDING", "CANCELLED"}:
             return None
         if order.order_type == "MEMBERSHIP" or order.package_id:
             paid_order, _ = await MembershipRepository(self.session).complete_order_payment(
                 order,
                 payment_provider="ALIPAY_SANDBOX",
                 provider_trade_no=result.trade_no,
+                allow_cancelled=True,
             )
             return paid_order
         service = await self.session.scalar(
             select(ExpertServiceOrder).where(ExpertServiceOrder.finance_order_id == order.id).with_for_update()
         )
-        if not service or service.status != "PENDING_PAYMENT":
+        if not service or service.status not in {"PENDING_PAYMENT", "CANCELLED"}:
             return None
         order.order_type = "EXPERT_SERVICE"
         order.provider_trade_no = result.trade_no

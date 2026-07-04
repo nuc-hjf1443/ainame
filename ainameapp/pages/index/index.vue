@@ -132,10 +132,12 @@ import { onHide, onShow } from '@dcloudio/uni-app';
 import http from '@/http/http.js';
 import DashboardLayout from '@/components/DashboardLayout/DashboardLayout.vue';
 import BrandKitPanel from '@/components/BrandKitPanel/BrandKitPanel.vue';
+import { openAlipayWindow, startAlipayPayment } from '@/utils/alipayPayment.js';
 
 // --- 状态定义 ---
 const LEGACY_WORKBENCH_STORAGE_KEY = 'namingWorkbenchState';
 const WORKBENCH_STORAGE_PREFIX = 'namingWorkbenchState';
+const PENDING_EXPERT_ALIPAY_KEY = 'pending_expert_alipay_out_trade_no';
 const categories = ['人名', '企业名', '宠物名'];
 const genderOptions = ['不限', '男', '女'];
 const lengthOptions = ['不限', '单字', '两字', '多字'];
@@ -180,7 +182,8 @@ const orderTargetIndex = ref(null);
 const selectedExpert = ref(null);
 const submittingOrder = ref(false);
 const orderForm = reactive({ package_id: null, requirements: '' });
-const selectedPackages = computed(() => selectedExpert.value ? packages.value.filter(item => item.expert_type === selectedExpert.value.expert_type) : []);
+const packageMatchesExpert = (item, expert) => item.expert_type === expert.expert_type && (item.expert_level || 'STANDARD') === (expert.expert_level || 'STANDARD');
+const selectedPackages = computed(() => selectedExpert.value ? packages.value.filter(item => packageMatchesExpert(item, selectedExpert.value)) : []);
 const labelType = value => value === 'CULTURE_MASTER' ? '国学命名专家' : '品牌咨询师';
 const payable = item => profile.value?.is_vip ? (Number(item.price) * 0.9).toFixed(2) : Number(item.price).toFixed(2);
 
@@ -262,13 +265,8 @@ const switchCategory = (cat) => {
   persistWorkbench();
 };
 
-const redirectToAlipay = payment => {
-  // #ifdef H5
-  window.location.href = payment.payment_url;
-  // #endif
-  // #ifndef H5
-  uni.showToast({ title: '当前仅 H5 支持支付宝沙箱支付', icon: 'none' });
-  // #endif
+const redirectToAlipay = (payment, payWindow = null) => {
+  startAlipayPayment(payment, { pendingKey: PENDING_EXPERT_ALIPAY_KEY, payWindow });
 };
 
 const saveName = async (item, index) => {
@@ -377,7 +375,7 @@ const openPrecision = async (item, index) => {
 
 const selectExpert = expert => {
   selectedExpert.value = expert;
-  orderForm.package_id = packages.value.find(item => item.expert_type === expert.expert_type)?.id || null;
+  orderForm.package_id = packages.value.find(item => packageMatchesExpert(item, expert))?.id || null;
 };
 
 const closeOrder = () => {
@@ -408,8 +406,9 @@ const createPrecisionOrder = async () => {
       content: `实付 ¥${order.amount}，是否前往支付宝沙箱支付？`,
       success: async result => {
         if (result.confirm) {
+          const payWindow = openAlipayWindow();
           const payment = await http.startExpertAlipay(order.id);
-          redirectToAlipay(payment);
+          redirectToAlipay(payment, payWindow);
         } else {
           uni.redirectTo({ url: '/pages/assets/index?tab=orders' });
         }

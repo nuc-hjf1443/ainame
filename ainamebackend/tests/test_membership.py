@@ -116,6 +116,48 @@ async def test_free_and_vip_daily_quota_and_refund(session):
 
 
 @pytest.mark.asyncio
+async def test_free_quota_is_total_and_vip_quota_is_monthly(session, monkeypatch):
+    free_user = await create_user(session, "free-total-quota")
+    session.add(DailyQuotaUsage(user_id=free_user.id, usage_date=date(2026, 6, 30), naming_used=5))
+    await session.commit()
+    monkeypatch.setattr(quota_service, "current_usage_date", lambda: date(2026, 7, 1))
+
+    with pytest.raises(HTTPException) as free_error:
+        await reserve_quota(session, free_user.id, "NAMING")
+    assert free_error.value.status_code == 429
+
+    vip_user = await create_user(session, "vip-monthly-quota")
+    package = PackageConfig(
+        package_code="VIP_MONTHLY_LOW",
+        package_type="VIP",
+        name="月度 VIP 小额",
+        price=Decimal("1.00"),
+        duration_days=30,
+        naming_daily_quota=2,
+        visual_daily_quota=1,
+        expert_discount=Decimal("1.00"),
+        status="ACTIVE",
+    )
+    session.add(package)
+    await session.commit()
+    session.add(UserMembership(
+        user_id=vip_user.id,
+        package_id=package.id,
+        start_time=datetime(2026, 6, 1),
+        end_time=datetime(2026, 8, 1),
+        status="ACTIVE",
+    ))
+    session.add(DailyQuotaUsage(user_id=vip_user.id, usage_date=date(2026, 6, 30), naming_used=2))
+    await session.commit()
+
+    await reserve_quota(session, vip_user.id, "NAMING")
+    await reserve_quota(session, vip_user.id, "NAMING")
+    with pytest.raises(HTTPException) as vip_error:
+        await reserve_quota(session, vip_user.id, "NAMING")
+    assert vip_error.value.status_code == 429
+
+
+@pytest.mark.asyncio
 async def test_naming_quota_package_adds_balance_and_is_used_after_daily_quota(session):
     user = await create_user(session, "quota-balance")
     package = await create_naming_quota_package(session, quota=30)

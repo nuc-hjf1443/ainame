@@ -22,6 +22,9 @@
           <view :class="['nav-item', currentMenu === 'recharge' ? 'active' : '']" @click="switchMenu('recharge', '/pages/recharge/index')">
             <text class="nav-icon">💳</text> 充值中心
           </view>
+          <view :class="['nav-item', currentMenu === 'orders' ? 'active' : '']" @click="switchMenu('orders', '/pages/orders/index')">
+            <text class="nav-icon">📋</text> 我的订单
+          </view>
           <view v-if="isExpert" :class="['nav-item', currentMenu === 'expert_workbench' ? 'active' : '']" @click="switchMenu('expert_workbench', '/pages/expert/workbench')">
             <text class="nav-icon">🧑‍🏫</text> 专家工作台
           </view>

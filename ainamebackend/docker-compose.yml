@@ -5,12 +5,13 @@ services:
     depends_on:
       - db
       - redis
+      - postgres_db
     environment:
-      - REDIS_URL=redis
-      - DB_URI=db
-      - MYSQL_USER=root
-      - MYSQL_PASSWORD=123456
-      - MYSQL_DB=ainame
+      - REDIS_URL=redis://redis:6379/0
+      - DB_URI=mysql+aiomysql://root:123456@db:3306/ainame?charset=utf8mb4
+      - POSTGRES_MEMORY_URI=postgresql://postgres:123456@postgres_db:5432/ainame
+    networks:
+      - ainame_net
 
   postgres_db:
     image: postgres:15-alpine
@@ -21,6 +22,8 @@ services:
       POSTGRES_DB: ainame
     ports:
       - "5432:5432"
+    networks:
+      - ainame_net
 
   db:
     image: mysql:8.0
@@ -30,12 +33,16 @@ services:
       MYSQL_DATABASE: ainame
     volumes:
       - mysql_data:/var/lib/mysql
+    networks:
+      - ainame_net
 
   redis:
     image: redis:alpine
     restart: always
     volumes:
       - redis_data:/data
+    networks:
+      - ainame_net
 
   nginx:
     image: nginx:alpine
@@ -46,7 +53,14 @@ services:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - web
+    networks:
+      - ainame_net
 
 volumes:
   mysql_data:
   redis_data:
+
+networks:
+  ainame_net:
+    name: ainame_net
+    driver: bridge

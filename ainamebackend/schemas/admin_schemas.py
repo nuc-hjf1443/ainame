@@ -12,6 +12,10 @@ UserRole = Literal["ADMIN", "B_END", "C_END"]
 RefundReviewStatus = Literal["APPROVED", "REJECTED"]
 KnowledgeStatus = Literal["ACTIVE", "INACTIVE", "PROCESSING", "FAILED"]
 AgentStatus = Literal["ACTIVE", "INACTIVE"]
+PackageScope = Literal["VIP", "NAMING_QUOTA", "EXPERT_SERVICE"]
+PackageStatus = Literal["ACTIVE", "INACTIVE"]
+ExpertType = Literal["CULTURE_MASTER", "BRAND_CONSULTANT"]
+ExpertLevel = Literal["STANDARD", "SENIOR", "MASTER"]
 
 
 class AdminUserOut(BaseModel):
@@ -170,3 +174,56 @@ class SensitiveWordPageOut(BaseModel):
     total: int
     page: PageInt
     page_size: PageSizeInt
+
+
+class AdminPackageIn(BaseModel):
+    package_scope: PackageScope
+    name: str = Field(..., min_length=1, max_length=100)
+    price: Decimal = Field(..., ge=0, max_digits=10, decimal_places=2)
+    status: PackageStatus = "ACTIVE"
+    description: str | None = Field(default=None, max_length=3000)
+    package_code: str | None = Field(default=None, max_length=50)
+    api_quota: int | None = Field(default=None, ge=0)
+    duration_days: int | None = Field(default=None, ge=0, le=3650)
+    naming_daily_quota: int | None = Field(default=None, ge=0)
+    visual_daily_quota: int | None = Field(default=None, ge=0)
+    expert_discount: Decimal | None = Field(default=None, ge=0, le=1, max_digits=4, decimal_places=2)
+    expert_type: ExpertType | None = None
+    expert_level: ExpertLevel | None = None
+    delivery_days: int | None = Field(default=None, ge=1, le=365)
+
+
+class AdminPackageUpdateIn(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    price: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
+    status: PackageStatus | None = None
+    description: str | None = Field(default=None, max_length=3000)
+    package_code: str | None = Field(default=None, max_length=50)
+    api_quota: int | None = Field(default=None, ge=0)
+    duration_days: int | None = Field(default=None, ge=0, le=3650)
+    naming_daily_quota: int | None = Field(default=None, ge=0)
+    visual_daily_quota: int | None = Field(default=None, ge=0)
+    expert_discount: Decimal | None = Field(default=None, ge=0, le=1, max_digits=4, decimal_places=2)
+    expert_type: ExpertType | None = None
+    expert_level: ExpertLevel | None = None
+    delivery_days: int | None = Field(default=None, ge=1, le=365)
+
+
+class AdminPackageOut(BaseModel):
+    id: int
+    package_scope: PackageScope
+    name: str
+    price: Decimal
+    status: str
+    description: str | None = None
+    package_code: str | None = None
+    api_quota: int | None = None
+    duration_days: int | None = None
+    naming_daily_quota: int | None = None
+    visual_daily_quota: int | None = None
+    expert_discount: Decimal | None = None
+    expert_type: str | None = None
+    expert_level: str | None = None
+    delivery_days: int | None = None
+    created_time: datetime
+    updated_time: datetime | None = None

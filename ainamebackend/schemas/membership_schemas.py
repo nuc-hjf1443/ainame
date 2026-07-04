@@ -7,7 +7,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 class MembershipPackageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
-    package_code: str
+    package_code: str | None = None
+    package_type: str | None = None
     name: str
     price: Decimal
     api_quota: int
@@ -34,6 +35,7 @@ class QuotaOut(BaseModel):
     used: int
     limit: int
     remaining: int
+    period: str | None = None
 
 
 class MyProfileOut(BaseModel):

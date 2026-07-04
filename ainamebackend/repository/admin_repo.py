@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import Select, func, or_, select
@@ -13,6 +14,7 @@ from models.finance import Order, PackageConfig, RefundAudit
 from models.user import User
 from models.finance import UserMembership
 from models.marketplace import ExpertProfile, ExpertServiceOrder, ExpertServicePackage
+from repository.payment_repo import PaymentRepository
 
 
 class AdminRepository:
@@ -113,6 +115,38 @@ class AdminRepository:
             "refund_status": refund.status if refund else None,
         }
 
+    async def sync_alipay_order(self, order_id: int) -> dict[str, Any] | None:
+        order = await self.session.get(Order, order_id)
+        if not order or order.payment_provider != "ALIPAY_SANDBOX" or not order.out_trade_no:
+            return None
+        synced = await PaymentRepository(self.session, self.alipay_client).sync_alipay_order(order.out_trade_no)
+        if not synced:
+            return None
+        return await self._order_payload(synced)
+
+    async def sync_pending_alipay_orders(self, limit: int = 50) -> int:
+        result = await self.session.execute(
+            select(Order)
+            .where(
+                Order.payment_provider == "ALIPAY_SANDBOX",
+                Order.status.in_(("PENDING", "CANCELLED")),
+                Order.out_trade_no.is_not(None),
+            )
+            .order_by(Order.created_time.desc(), Order.id.desc())
+            .limit(limit)
+        )
+        orders = result.scalars().all()
+        synced_count = 0
+        for order in orders:
+            try:
+                synced = await PaymentRepository(self.session, self.alipay_client).sync_alipay_order(order.out_trade_no)
+            except Exception:
+                await self.session.rollback()
+                continue
+            if synced and synced.status == "PAID":
+                synced_count += 1
+        return synced_count
+
     async def list_orders(
             self,
             page: int,
@@ -122,6 +156,7 @@ class AdminRepository:
             payment_provider: str | None = None,
             keyword: str | None = None,
     ):
+        await self.sync_pending_alipay_orders()
         await expire_pending_orders(self.session)
         conditions = []
         if status:
@@ -263,3 +298,159 @@ class AdminRepository:
             SensitiveWordInterception.id.desc(),
         )
         return await self._paginate(stmt, page, page_size)
+
+    def _package_scope(self, package: PackageConfig) -> str | None:
+        if package.package_type:
+            return package.package_type
+        if package.package_code in {"VIP_MONTHLY", "VIP_YEARLY"}:
+            return "VIP"
+        if str(package.package_code or "").startswith("QUOTA_NAMING_"):
+            return "NAMING_QUOTA"
+        return None
+
+    def _finance_package_payload(self, package: PackageConfig) -> dict[str, Any]:
+        return {
+            "id": package.id,
+            "package_scope": self._package_scope(package),
+            "name": package.name,
+            "price": package.price,
+            "status": package.status,
+            "description": package.description,
+            "package_code": package.package_code,
+            "api_quota": package.api_quota,
+            "duration_days": package.duration_days,
+            "naming_daily_quota": package.naming_daily_quota,
+            "visual_daily_quota": package.visual_daily_quota,
+            "expert_discount": package.expert_discount,
+            "created_time": package.created_time,
+            "updated_time": package.updated_time,
+        }
+
+    def _expert_package_payload(self, package: ExpertServicePackage) -> dict[str, Any]:
+        return {
+            "id": package.id,
+            "package_scope": "EXPERT_SERVICE",
+            "name": package.name,
+            "price": package.price,
+            "status": package.status,
+            "description": package.description,
+            "expert_type": package.expert_type,
+            "expert_level": package.expert_level,
+            "delivery_days": package.delivery_days,
+            "created_time": package.created_time,
+            "updated_time": package.updated_time,
+        }
+
+    async def list_packages(self, package_scope: str | None = None) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        if package_scope in {None, "VIP", "NAMING_QUOTA"}:
+            conditions = []
+            if package_scope:
+                conditions.append(PackageConfig.package_type == package_scope)
+            else:
+                conditions.append(PackageConfig.package_type.in_(("VIP", "NAMING_QUOTA")))
+            result = await self.session.execute(
+                select(PackageConfig).where(*conditions).order_by(PackageConfig.package_type, PackageConfig.price, PackageConfig.id)
+            )
+            items.extend(self._finance_package_payload(package) for package in result.scalars().all())
+        if package_scope in {None, "EXPERT_SERVICE"}:
+            result = await self.session.execute(
+                select(ExpertServicePackage).order_by(
+                    ExpertServicePackage.expert_type,
+                    ExpertServicePackage.expert_level,
+                    ExpertServicePackage.price,
+                    ExpertServicePackage.id,
+                )
+            )
+            items.extend(self._expert_package_payload(package) for package in result.scalars().all())
+        return items
+
+    async def create_package(self, values: dict[str, Any]) -> dict[str, Any]:
+        scope = values.pop("package_scope")
+        if scope == "EXPERT_SERVICE":
+            package = ExpertServicePackage(
+                name=values["name"],
+                expert_type=values["expert_type"],
+                expert_level=values.get("expert_level") or "STANDARD",
+                price=values["price"],
+                delivery_days=values["delivery_days"],
+                description=values.get("description") or "",
+                status=values.get("status") or "ACTIVE",
+            )
+            self.session.add(package)
+            await self.session.commit()
+            await self.session.refresh(package)
+            return self._expert_package_payload(package)
+
+        package = PackageConfig(
+            name=values["name"],
+            package_code=values.get("package_code"),
+            package_type=scope,
+            price=values["price"],
+            api_quota=values.get("api_quota") or 0,
+            duration_days=values.get("duration_days") or 0,
+            naming_daily_quota=values.get("naming_daily_quota") or 0,
+            visual_daily_quota=values.get("visual_daily_quota") or 0,
+            expert_discount=values.get("expert_discount") or Decimal("1.00"),
+            description=values.get("description"),
+            status=values.get("status") or "ACTIVE",
+        )
+        self.session.add(package)
+        await self.session.commit()
+        await self.session.refresh(package)
+        return self._finance_package_payload(package)
+
+    async def update_package(self, package_scope: str, package_id: int, values: dict[str, Any]) -> dict[str, Any] | None:
+        if package_scope == "EXPERT_SERVICE":
+            package = await self.session.get(ExpertServicePackage, package_id)
+            if not package:
+                return None
+            for key in ("name", "expert_type", "expert_level", "price", "delivery_days", "description", "status"):
+                if key in values and values[key] is not None:
+                    setattr(package, key, values[key])
+            await self.session.commit()
+            await self.session.refresh(package)
+            return self._expert_package_payload(package)
+
+        package = await self.session.scalar(
+            select(PackageConfig).where(PackageConfig.id == package_id, PackageConfig.package_type == package_scope)
+        )
+        if not package:
+            return None
+        for key in (
+            "name", "package_code", "price", "api_quota", "duration_days", "naming_daily_quota",
+            "visual_daily_quota", "expert_discount", "description", "status",
+        ):
+            if key in values and values[key] is not None:
+                setattr(package, key, values[key])
+        await self.session.commit()
+        await self.session.refresh(package)
+        return self._finance_package_payload(package)
+
+    async def delete_package(self, package_scope: str, package_id: int) -> bool | None:
+        if package_scope == "EXPERT_SERVICE":
+            package = await self.session.get(ExpertServicePackage, package_id)
+            if not package:
+                return None
+            in_use = await self.session.scalar(
+                select(func.count()).select_from(ExpertServiceOrder).where(ExpertServiceOrder.package_id == package_id)
+            ) or 0
+            if in_use:
+                return False
+            await self.session.delete(package)
+            await self.session.commit()
+            return True
+
+        package = await self.session.scalar(
+            select(PackageConfig).where(PackageConfig.id == package_id, PackageConfig.package_type == package_scope)
+        )
+        if not package:
+            return None
+        in_use = await self.session.scalar(
+            select(func.count()).select_from(Order).where(Order.package_id == package_id)
+        ) or 0
+        if in_use:
+            return False
+        await self.session.delete(package)
+        await self.session.commit()
+        return True

@@ -6,9 +6,9 @@
         <view class="title">Pricing</view>
         <view class="subtitle">选择适合你的起名额度和会员服务，支付成功后立即生效。</view>
         <view v-if="profile" class="balance-strip">
-          <text>今日起名 {{ profile.naming_quota.remaining }} / {{ profile.naming_quota.limit }}</text>
+          <text>{{ profile.is_vip ? '本月起名' : '账号起名额度' }} {{ profile.naming_quota.remaining }} / {{ profile.naming_quota.limit }}</text>
           <text>购买余额 {{ profile.naming_balance || 0 }} 次</text>
-          <text>视觉生成 {{ profile.visual_quota.remaining }} / {{ profile.visual_quota.limit }}</text>
+          <text>{{ profile.is_vip ? '本月品牌生成' : '品牌生成' }} {{ profile.visual_quota.remaining }} / {{ profile.visual_quota.limit }}</text>
         </view>
       </view>
 
@@ -18,7 +18,7 @@
           <view class="plan-name">免费版</view>
           <view class="price-line"><text class="currency">¥</text><text class="price">0</text><text class="period">/ 当前账号</text></view>
           <view class="features">
-            <view class="feature">每日 5 次智能起名</view>
+            <view class="feature">账号累计 5 次智能起名</view>
             <view class="feature">可收藏名字资产</view>
             <view class="feature">可发布灵感投票</view>
           </view>
@@ -29,8 +29,8 @@
           <view class="plan-name">{{ item.name }}</view>
           <view class="price-line"><text class="currency">¥</text><text class="price">{{ priceText(item.price) }}</text><text class="period">/ {{ item.duration_days >= 365 ? '年' : '月' }}</text></view>
           <view class="features">
-            <view class="feature">每日 {{ item.naming_daily_quota }} 次智能起名</view>
-            <view class="feature">每日 {{ item.visual_daily_quota }} 次视觉生成</view>
+            <view class="feature">每月 {{ item.naming_daily_quota }} 次智能起名</view>
+            <view class="feature">每月 {{ item.visual_daily_quota }} 次品牌生成</view>
             <view class="feature">专家服务 {{ discountText(item.expert_discount) }}</view>
             <view class="feature">{{ item.description || '会员权益立即生效' }}</view>
           </view>
@@ -52,7 +52,7 @@
           <view class="price-line"><text class="currency">¥</text><text class="price">{{ priceText(item.price) }}</text><text class="period">/ 永久有效</text></view>
           <view class="quota-count">{{ item.api_quota }} 次</view>
           <view class="features">
-            <view class="feature">免费/VIP 当日额度用完后自动抵扣</view>
+            <view class="feature">账号/VIP 起名额度用完后自动抵扣</view>
             <view class="feature">仅用于智能起名和多轮微调</view>
             <view class="feature">失败退款会退回次数余额</view>
           </view>
@@ -70,13 +70,16 @@ import { computed, ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
 import http from '@/http/http.js';
 import DashboardLayout from '@/components/DashboardLayout/DashboardLayout.vue';
+import { openAlipayWindow, startAlipayPayment } from '@/utils/alipayPayment.js';
 
 const packages = ref([]);
 const profile = ref(null);
 const payingId = ref(null);
+const PENDING_ALIPAY_KEY = 'pending_membership_alipay_out_trade_no';
 
-const vipPackages = computed(() => packages.value.filter(item => ['VIP_MONTHLY', 'VIP_YEARLY'].includes(item.package_code)));
-const quotaPackages = computed(() => packages.value.filter(item => String(item.package_code || '').startsWith('QUOTA_NAMING_')));
+const packageType = item => item.package_type || (String(item.package_code || '').startsWith('QUOTA_NAMING_') ? 'NAMING_QUOTA' : 'VIP');
+const vipPackages = computed(() => packages.value.filter(item => packageType(item) === 'VIP'));
+const quotaPackages = computed(() => packages.value.filter(item => packageType(item) === 'NAMING_QUOTA'));
 const priceText = value => Number(value || 0).toFixed(2).replace(/\.00$/, '');
 const discountText = value => `${Math.round(Number(value || 1) * 10)} 折`;
 const currentVipPackage = item => Boolean(
@@ -87,16 +90,26 @@ const currentVipPackage = item => Boolean(
   )
 );
 
-const redirectToAlipay = payment => {
-  // #ifdef H5
-  window.location.href = payment.payment_url;
-  // #endif
-  // #ifndef H5
-  uni.showToast({ title: '当前仅 H5 支持支付宝沙箱支付', icon: 'none' });
-  // #endif
+const redirectToAlipay = (payment, payWindow = null) => {
+  startAlipayPayment(payment, { pendingKey: PENDING_ALIPAY_KEY, payWindow });
+};
+
+const syncPendingPayment = async () => {
+  const outTradeNo = uni.getStorageSync(PENDING_ALIPAY_KEY);
+  if (!outTradeNo || !uni.getStorageSync('token')) return;
+  try {
+    const result = await http.syncAlipayOrder(outTradeNo, { silent: true });
+    if (result.status === 'PAID') {
+      uni.removeStorageSync(PENDING_ALIPAY_KEY);
+      uni.showToast({ title: '支付已同步', icon: 'none' });
+    }
+  } catch (e) {
+    // Keep the pending trade number so the next page visit can retry.
+  }
 };
 
 const load = async () => {
+  await syncPendingPayment();
   packages.value = await http.getMembershipPackages();
   if (uni.getStorageSync('token')) profile.value = await http.getMyProfile();
   else profile.value = null;
@@ -105,7 +118,7 @@ const load = async () => {
 const buyPackage = item => {
   if (currentVipPackage(item)) return;
   if (!uni.getStorageSync('token')) return uni.navigateTo({ url: '/pages/login/login' });
-  const content = item.package_code?.startsWith('QUOTA_NAMING_')
+  const content = packageType(item) === 'NAMING_QUOTA'
     ? `支付宝沙箱支付 ¥${priceText(item.price)}，到账 ${item.api_quota} 次起名余额。`
     : `支付宝沙箱支付 ¥${priceText(item.price)}，${item.name} 将立即开通或顺延。`;
   uni.showModal({
@@ -113,11 +126,12 @@ const buyPackage = item => {
     content,
     success: async result => {
       if (!result.confirm) return;
+      const payWindow = openAlipayWindow();
       payingId.value = item.id;
       try {
         const order = await http.createMembershipOrder(item.id);
         const payment = await http.startMembershipAlipay(order.id);
-        redirectToAlipay(payment);
+        redirectToAlipay(payment, payWindow);
       } finally {
         payingId.value = null;
       }

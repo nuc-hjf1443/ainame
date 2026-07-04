@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 ExpertType = Literal["CULTURE_MASTER", "BRAND_CONSULTANT"]
+ExpertLevel = Literal["STANDARD", "SENIOR", "MASTER"]
 
 
 class ExpertApplyIn(BaseModel):
@@ -22,6 +23,7 @@ class ExpertOut(BaseModel):
     user_id: int
     display_name: str
     expert_type: str
+    expert_level: str = "STANDARD"
     bio: str
     credentials: str
     years_experience: int
@@ -42,6 +44,7 @@ class ExpertPageOut(BaseModel):
 class ServicePackageIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     expert_type: ExpertType
+    expert_level: ExpertLevel = "STANDARD"
     price: Decimal = Field(..., gt=0, max_digits=10, decimal_places=2)
     delivery_days: int = Field(..., ge=1, le=365)
     description: str = Field(..., min_length=1, max_length=3000)
@@ -51,6 +54,7 @@ class ServicePackageIn(BaseModel):
 class ServicePackageUpdateIn(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     expert_type: ExpertType | None = None
+    expert_level: ExpertLevel | None = None
     price: Decimal | None = Field(default=None, gt=0, max_digits=10, decimal_places=2)
     delivery_days: int | None = Field(default=None, ge=1, le=365)
     description: str | None = Field(default=None, min_length=1, max_length=3000)
@@ -148,6 +152,7 @@ class ExpertReviewOut(BaseModel):
 class ExpertReviewDecisionIn(BaseModel):
     status: Literal["APPROVED", "REJECTED", "SUSPENDED"]
     review_note: str | None = Field(default=None, max_length=1000)
+    expert_level: ExpertLevel | None = None
 
 
 class CommunityModerationIn(BaseModel):

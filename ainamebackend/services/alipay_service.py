@@ -1,5 +1,6 @@
 import base64
 import json
+from json import JSONDecodeError
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -51,7 +52,12 @@ class AlipayClient:
         if not settings.ALIPAY_PUBLIC_KEY_PATH or not Path(settings.ALIPAY_PUBLIC_KEY_PATH).is_file():
             raise AlipayError("缺少支付宝公钥文件")
 
-    def build_pay_url(self, order: Order) -> str:
+    def build_pay_url(
+            self,
+            order: Order,
+            notify_url: str | None = None,
+            return_url: str | None = None,
+    ) -> str:
         self.ensure_enabled()
         if not order.out_trade_no:
             raise AlipayError("订单缺少 out_trade_no")
@@ -66,15 +72,20 @@ class AlipayClient:
         }
         params = self._base_params(method)
         params.update(
-            notify_url=settings.ALIPAY_NOTIFY_URL,
-            return_url=settings.ALIPAY_RETURN_URL,
+            notify_url=notify_url or settings.ALIPAY_NOTIFY_URL,
+            return_url=return_url or settings.ALIPAY_RETURN_URL,
             biz_content=json.dumps(biz_content, ensure_ascii=False, separators=(",", ":")),
         )
         params["sign"] = self.sign(params)
         return f"{self.gateway_url}?{urlencode(params)}"
 
-    def build_wap_pay_url(self, order: Order) -> str:
-        return self.build_pay_url(order)
+    def build_wap_pay_url(
+            self,
+            order: Order,
+            notify_url: str | None = None,
+            return_url: str | None = None,
+    ) -> str:
+        return self.build_pay_url(order, notify_url=notify_url, return_url=return_url)
 
     async def query_trade(self, out_trade_no: str) -> AlipayTradeResult:
         response = await self._request(
@@ -109,16 +120,36 @@ class AlipayClient:
         params = self._base_params(method)
         params["biz_content"] = json.dumps(biz_content, ensure_ascii=False, separators=(",", ":"))
         params["sign"] = self.sign(params)
-        async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.post(self.gateway_url, data=params)
-            response.raise_for_status()
-        data = response.json()
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                response = await client.post(self.gateway_url, data=params)
+                response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise AlipayError(f"支付宝接口请求失败：{exc}") from exc
+        data = self._decode_response_json(response)
         response_key = f"{method.replace('.', '_')}_response"
         payload = data.get(response_key) or {}
         if payload.get("code") != "10000":
             message = payload.get("sub_msg") or payload.get("msg") or "支付宝接口调用失败"
             raise AlipayError(message)
         return payload
+
+    def _decode_response_json(self, response: httpx.Response) -> dict[str, Any]:
+        encodings = [
+            response.encoding,
+            getattr(response, "charset_encoding", None),
+            "utf-8",
+            "gbk",
+            "gb18030",
+        ]
+        last_error: Exception | None = None
+        for encoding in dict.fromkeys(filter(None, encodings)):
+            try:
+                return json.loads(response.content.decode(encoding))
+            except (UnicodeDecodeError, JSONDecodeError) as exc:
+                last_error = exc
+        text = response.content.decode("utf-8", errors="replace")
+        raise AlipayError(f"支付宝接口返回非 JSON 响应：{text[:200]}") from last_error
 
     def sign(self, params: dict[str, Any]) -> str:
         unsigned = self._unsigned_string(params)

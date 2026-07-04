@@ -1,7 +1,9 @@
-from datetime import datetime
+import json
+from datetime import datetime, timedelta
 from decimal import Decimal
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -83,6 +85,29 @@ async def test_alipay_wap_payment_url_is_signed(session, monkeypatch, tmp_path):
     params["biz_content"] = params["biz_content"].replace("9.90", "0.01")
     assert not client.verify(params)
 
+    override_params = {
+        key: values[0]
+        for key, values in parse_qs(urlparse(client.build_pay_url(
+            order,
+            notify_url="https://runtime-api.test/payments/alipay/notify",
+            return_url="https://runtime-front.test/#/pages/payment/result",
+        )).query).items()
+    }
+    assert override_params["notify_url"] == "https://runtime-api.test/payments/alipay/notify"
+    assert override_params["return_url"] == "https://runtime-front.test/#/pages/payment/result"
+    assert client.verify(override_params)
+
+
+def test_alipay_response_json_accepts_gbk_payload():
+    client = AlipayClient()
+    payload = {"alipay_trade_query_response": {"code": "40004", "sub_msg": "交易不存在"}}
+    response = httpx.Response(
+        200,
+        content=json.dumps(payload, ensure_ascii=False).encode("gbk"),
+    )
+
+    assert client._decode_response_json(response) == payload
+
 
 @pytest.mark.asyncio
 async def test_alipay_wap_mode_uses_wap_method(session, monkeypatch, tmp_path):
@@ -143,6 +168,130 @@ async def test_alipay_membership_completion_is_idempotent(session):
     assert balance.naming_balance == 30
     assert order.status == "PAID"
     assert order.provider_trade_no == "TRADE_NO_1"
+
+
+@pytest.mark.asyncio
+async def test_alipay_paid_cancelled_membership_order_grants_balance(session):
+    user = await create_user(session, "alipay-cancelled-balance")
+    package = PackageConfig(
+        package_code="QUOTA_NAMING_30",
+        name="30 娆¤捣鍚嶅寘",
+        price=Decimal("9.90"),
+        api_quota=30,
+        status="ACTIVE",
+    )
+    session.add(package)
+    await session.commit()
+    order = Order(
+        user_id=user.id,
+        package_id=package.id,
+        amount=Decimal("9.90"),
+        status="CANCELLED",
+        order_type="MEMBERSHIP",
+        payment_provider="ALIPAY_SANDBOX",
+        out_trade_no="AN_TEST_CANCELLED_BALANCE",
+    )
+    session.add(order)
+    await session.commit()
+
+    paid = await PaymentRepository(session).complete_alipay_payment(
+        AlipayTradeResult("AN_TEST_CANCELLED_BALANCE", "TRADE_NO_CANCELLED", Decimal("9.90"), "TRADE_SUCCESS")
+    )
+
+    balance = await MembershipRepository(session).get_quota_balance(user.id)
+    await session.refresh(order)
+    assert paid is not None
+    assert balance.naming_balance == 30
+    assert order.status == "PAID"
+    assert order.provider_trade_no == "TRADE_NO_CANCELLED"
+
+
+@pytest.mark.asyncio
+async def test_admin_order_list_syncs_paid_alipay_membership_order(session):
+    user = await create_user(session, "admin-sync-balance")
+    package = PackageConfig(
+        package_code="QUOTA_NAMING_30",
+        name="30 次起名包",
+        price=Decimal("9.90"),
+        api_quota=30,
+        status="ACTIVE",
+    )
+    session.add(package)
+    await session.commit()
+    order = Order(
+        user_id=user.id,
+        package_id=package.id,
+        amount=Decimal("9.90"),
+        status="PENDING",
+        order_type="MEMBERSHIP",
+        payment_provider="ALIPAY_SANDBOX",
+        out_trade_no="AN_TEST_ADMIN_SYNC_BALANCE",
+    )
+    session.add(order)
+    await session.commit()
+
+    class FakeAlipay:
+        async def query_trade(self, out_trade_no):
+            assert out_trade_no == "AN_TEST_ADMIN_SYNC_BALANCE"
+            return AlipayTradeResult(out_trade_no, "TRADE_NO_ADMIN_SYNC", Decimal("9.90"), "TRADE_SUCCESS")
+
+    items, total = await AdminRepository(session, FakeAlipay()).list_orders(1, 20)
+
+    balance = await MembershipRepository(session).get_quota_balance(user.id)
+    await session.refresh(order)
+    assert total == 1
+    assert items[0]["status"] == "PAID"
+    assert items[0]["paid_time"] is not None
+    assert order.status == "PAID"
+    assert order.provider_trade_no == "TRADE_NO_ADMIN_SYNC"
+    assert balance.naming_balance == 30
+
+
+@pytest.mark.asyncio
+async def test_user_payment_order_list_is_scoped_and_has_deadline(session):
+    user = await create_user(session, "my-orders-owner")
+    other = await create_user(session, "my-orders-other")
+    package = PackageConfig(
+        package_code="QUOTA_NAMING_30",
+        name="30 次起名包",
+        price=Decimal("9.90"),
+        api_quota=30,
+        status="ACTIVE",
+    )
+    session.add(package)
+    await session.commit()
+    owned = await MembershipRepository(session).create_order(user.id, package.id)
+    await MembershipRepository(session).create_order(other.id, package.id)
+
+    items, total = await PaymentRepository(session).list_user_orders(user.id, 1, 20)
+
+    assert total == 1
+    assert items[0]["id"] == owned.id
+    assert items[0]["package_name"] == "30 次起名包"
+    assert items[0]["payment_deadline"] == owned.created_time + timedelta(minutes=15)
+
+
+@pytest.mark.asyncio
+async def test_user_can_prepare_pending_finance_order_for_alipay(session):
+    user = await create_user(session, "my-orders-pay")
+    package = PackageConfig(
+        package_code="QUOTA_NAMING_30",
+        name="30 次起名包",
+        price=Decimal("9.90"),
+        api_quota=30,
+        status="ACTIVE",
+    )
+    session.add(package)
+    await session.commit()
+    order = await MembershipRepository(session).create_order(user.id, package.id)
+
+    prepared = await PaymentRepository(session).prepare_user_alipay_order(order.id, user.id)
+
+    assert prepared is not None
+    assert prepared.id == order.id
+    assert prepared.order_type == "MEMBERSHIP"
+    assert prepared.payment_provider == "ALIPAY_SANDBOX"
+    assert prepared.out_trade_no
 
 
 @pytest.mark.asyncio
@@ -215,6 +364,53 @@ async def test_alipay_expert_payment_and_refund(session):
     payload = await MarketplaceRepository(session).order_payload(service)
     assert payload["status"] == "CANCELLED"
     assert payload["payment_status"] == "REFUNDED"
+
+
+@pytest.mark.asyncio
+async def test_alipay_paid_cancelled_expert_order_restores_service(session):
+    customer = await create_user(session, "cancelled-expert-customer")
+    expert_user = await create_user(session, "cancelled-expert-user")
+    asset = NamingAsset(user_id=customer.id, thread_id="thread", name="启明", category="企业名")
+    expert = ExpertProfile(
+        user_id=expert_user.id,
+        display_name="品牌专家",
+        expert_type="BRAND_CONSULTANT",
+        bio="具备长期品牌咨询和企业命名项目服务经验。",
+        credentials="品牌咨询与企业命名相关完整项目资历。",
+        years_experience=8,
+        status="APPROVED",
+    )
+    package = ExpertServicePackage(
+        name="品牌精批",
+        expert_type="BRAND_CONSULTANT",
+        price=Decimal("200.00"),
+        delivery_days=3,
+        description="结构化品牌分析",
+        status="ACTIVE",
+    )
+    session.add_all([asset, expert, package])
+    await session.commit()
+    service = await MarketplaceRepository(session).create_order(customer.id, {
+        "expert_id": expert.id,
+        "package_id": package.id,
+        "naming_asset_id": asset.id,
+        "requirements": "重点评估品牌传播优势",
+    })
+    finance = await session.get(Order, service.finance_order_id)
+    finance.payment_provider = "ALIPAY_SANDBOX"
+    finance.out_trade_no = "AN_TEST_CANCELLED_EXPERT"
+    finance.status = "CANCELLED"
+    service.status = "CANCELLED"
+    await session.commit()
+
+    paid = await PaymentRepository(session).complete_alipay_payment(
+        AlipayTradeResult("AN_TEST_CANCELLED_EXPERT", "TRADE_NO_CANCELLED_EXPERT", Decimal("200.00"), "TRADE_SUCCESS")
+    )
+    payload = await MarketplaceRepository(session).order_payload(service)
+
+    assert paid is not None
+    assert payload["status"] == "WAITING_ACCEPT"
+    assert payload["payment_status"] == "PAID"
 
 
 @pytest.mark.asyncio

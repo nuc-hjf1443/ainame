@@ -13,6 +13,7 @@ class PackageConfig(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100))
     package_code: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True)
+    package_type: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     api_quota: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     duration_days: Mapped[int] = mapped_column(Integer, default=0, server_default="0")

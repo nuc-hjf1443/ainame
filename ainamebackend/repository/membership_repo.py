@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.order_expiry import expire_order_if_unpaid
@@ -16,11 +16,24 @@ class MembershipRepository:
     VIP_CODES = {"VIP_MONTHLY", "VIP_YEARLY"}
     NAMING_QUOTA_CODES = {"QUOTA_NAMING_30", "QUOTA_NAMING_100", "QUOTA_NAMING_300"}
     RECHARGE_CODES = VIP_CODES | NAMING_QUOTA_CODES
+    RECHARGE_TYPES = {"VIP", "NAMING_QUOTA"}
+
+    def _package_type(self, package: PackageConfig) -> str | None:
+        if package.package_type:
+            return package.package_type
+        if package.package_code in self.VIP_CODES:
+            return "VIP"
+        if package.package_code in self.NAMING_QUOTA_CODES or str(package.package_code or "").startswith("QUOTA_NAMING_"):
+            return "NAMING_QUOTA"
+        return None
 
     async def list_packages(self):
         result = await self.session.execute(
             select(PackageConfig).where(
-                PackageConfig.package_code.in_(self.RECHARGE_CODES),
+                or_(
+                    PackageConfig.package_type.in_(self.RECHARGE_TYPES),
+                    PackageConfig.package_code.in_(self.RECHARGE_CODES),
+                ),
                 PackageConfig.status == "ACTIVE",
             ).order_by(PackageConfig.duration_days, PackageConfig.price)
         )
@@ -55,7 +68,10 @@ class MembershipRepository:
         package = await self.session.scalar(
             select(PackageConfig).where(
                 PackageConfig.id == package_id,
-                PackageConfig.package_code.in_(self.RECHARGE_CODES),
+                or_(
+                    PackageConfig.package_type.in_(self.RECHARGE_TYPES),
+                    PackageConfig.package_code.in_(self.RECHARGE_CODES),
+                ),
                 PackageConfig.status == "ACTIVE",
             )
         )
@@ -90,14 +106,16 @@ class MembershipRepository:
             order: Order,
             payment_provider: str = "MOCK",
             provider_trade_no: str | None = None,
+            allow_cancelled: bool = False,
     ):
         if not order or not order.package_id:
             return None, None
-        if await expire_order_if_unpaid(self.session, order):
+        if not allow_cancelled and await expire_order_if_unpaid(self.session, order):
             return None, None
         user_id = order.user_id
         package = await self.session.get(PackageConfig, order.package_id)
-        if not package or package.package_code not in self.RECHARGE_CODES:
+        package_type = self._package_type(package) if package else None
+        if not package or package_type not in self.RECHARGE_TYPES:
             return None, None
         balance = await self.session.scalar(
             select(UserQuotaBalance).where(UserQuotaBalance.user_id == user_id).with_for_update()
@@ -107,10 +125,11 @@ class MembershipRepository:
         )
         if order.status == "PAID":
             return order, membership
-        if order.status != "PENDING":
+        payable_statuses = {"PENDING", "CANCELLED"} if allow_cancelled else {"PENDING"}
+        if order.status not in payable_statuses:
             return None, None
         now = datetime.now()
-        if package.package_code in self.NAMING_QUOTA_CODES:
+        if package_type == "NAMING_QUOTA":
             if balance:
                 balance.naming_balance += package.api_quota
             else:
@@ -145,7 +164,14 @@ class MembershipRepository:
         user = await self.session.get(User, user_id)
         if not user or user.is_deleted:
             return None
-        package = await self.session.scalar(select(PackageConfig).where(PackageConfig.package_code == "VIP_MONTHLY"))
+        package = await self.session.scalar(
+            select(PackageConfig).where(
+                PackageConfig.package_type == "VIP",
+                PackageConfig.status == "ACTIVE",
+            ).order_by(PackageConfig.duration_days, PackageConfig.price).limit(1)
+        )
+        if not package:
+            package = await self.session.scalar(select(PackageConfig).where(PackageConfig.package_code == "VIP_MONTHLY"))
         if not package:
             return None
         membership = await self.session.scalar(

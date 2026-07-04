@@ -1,11 +1,12 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.status import HTTP_502_BAD_GATEWAY
 
 from services.alipay_service import AlipayClient, AlipayError
 from services.marketplace_service import generate_expert_report_draft
+from core.payment_urls import alipay_notify_url, alipay_return_url
 from dependencies import get_current_user, get_session, require_mock_payment_enabled
 from models.user import User
 from repository.asset_repo import AssetRepository
@@ -43,8 +44,20 @@ async def get_expert(expert_id: int, session: AsyncSession = Depends(get_session
 
 
 @router.get("/packages", response_model=list[ServicePackageOut])
-async def list_packages(expert_type: str | None = None, session: AsyncSession = Depends(get_session)):
-    return await MarketplaceRepository(session).list_packages(expert_type)
+async def list_packages(
+        expert_type: str | None = None,
+        expert_id: int | None = None,
+        session: AsyncSession = Depends(get_session),
+):
+    repo = MarketplaceRepository(session)
+    expert_level = None
+    if expert_id:
+        expert = await repo.get_expert(expert_id)
+        if not expert:
+            raise HTTPException(404, detail="专家不存在")
+        expert_type = expert["expert_type"]
+        expert_level = expert.get("expert_level") or "STANDARD"
+    return await repo.list_packages(expert_type, expert_level=expert_level)
 
 
 @router.post("/expert-application", response_model=ExpertOut)
@@ -90,6 +103,7 @@ async def create_order(data: ServiceOrderCreateIn, user: User = Depends(get_curr
 @router.post("/orders/{order_id}/alipay", response_model=AlipayPaymentOut)
 async def create_expert_alipay_payment(
         order_id: int,
+        request: Request,
         user: User = Depends(get_current_user),
         session: AsyncSession = Depends(get_session),
 ):
@@ -99,7 +113,11 @@ async def create_expert_alipay_payment(
         raise HTTPException(409, detail="专家订单不存在或不能发起支付")
     service, finance_order = prepared
     try:
-        payment_url = AlipayClient().build_pay_url(finance_order)
+        payment_url = AlipayClient().build_pay_url(
+            finance_order,
+            notify_url=alipay_notify_url(request),
+            return_url=alipay_return_url(request),
+        )
     except AlipayError as exc:
         raise HTTPException(status_code=HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return {

@@ -99,6 +99,7 @@
                 <text>服务状态</text>
                 <text>交易号</text>
                 <text>退款</text>
+                <text>创建时间</text>
                 <text>支付时间</text>
                 <text>操作</text>
               </view>
@@ -111,11 +112,13 @@
                 <text>{{ item.service_status ? serviceStatusText(item.service_status) : '-' }}</text>
                 <text class="mono">{{ item.out_trade_no || item.provider_trade_no || '-' }}</text>
                 <text>{{ item.refund_status ? `#${item.refund_id} ${refundStatusText(item.refund_status)}` : '-' }}</text>
+                <text>{{ formatTime(item.created_time) }}</text>
                 <text>{{ formatTime(item.paid_time) }}</text>
                 <view class="row-actions">
+                  <button v-if="canSyncAlipayOrder(item)" size="mini" class="primary-btn" :loading="syncOrderLoading === item.id" @click="syncOrderPayment(item)">同步支付</button>
                   <button v-if="canReviewRefund(item)" size="mini" class="primary-btn" :loading="refundLoading" @click="quickReviewRefund(item, 'APPROVED')">通过退款</button>
                   <button v-if="canReviewRefund(item)" size="mini" class="danger" :loading="refundLoading" @click="quickReviewRefund(item, 'REJECTED')">拒绝退款</button>
-                  <text v-if="!canReviewRefund(item)" class="muted">-</text>
+                  <text v-if="!canReviewRefund(item) && !canSyncAlipayOrder(item)" class="muted">-</text>
                 </view>
               </view>
             </view>
@@ -214,12 +217,15 @@
               <text class="item-title">{{ item.display_name }}</text>
               <text :class="['market-status', item.status]">{{ expertStatusText(item.status) }}</text>
             </view>
-            <view class="copy">{{ expertTypeText(item.expert_type) }} · {{ item.years_experience }} 年经验</view>
+            <view class="copy">{{ expertTypeText(item.expert_type) }} · {{ expertLevelText(item.expert_level) }} · {{ item.years_experience }} 年经验</view>
             <view v-if="item.review_note" class="review-note">审核备注：{{ item.review_note }}</view>
             <view class="market-actions">
               <button size="mini" :disabled="item.status === 'APPROVED'" @click.stop="reviewExpert(item, 'APPROVED')">通过</button>
               <button size="mini" class="danger" :disabled="item.status === 'APPROVED' || item.status === 'REJECTED'" @click.stop="reviewExpert(item, 'REJECTED')">拒绝</button>
               <button size="mini" class="outline" :disabled="item.status === 'SUSPENDED'" @click.stop="reviewExpert(item, 'SUSPENDED')">停用</button>
+              <button size="mini" class="outline" @click.stop="setExpertLevel(item, 'STANDARD')">标准</button>
+              <button size="mini" class="outline" @click.stop="setExpertLevel(item, 'SENIOR')">高级</button>
+              <button size="mini" class="outline" @click.stop="setExpertLevel(item, 'MASTER')">大师</button>
             </view>
           </view>
         </view>
@@ -227,21 +233,28 @@
         <view v-if="activeModule === 'service_packages'" class="panel">
           <view class="panel-head">
             <view>
-              <view class="panel-title">服务套餐</view>
-              <view class="panel-desc">新增、上下架或删除未被订单引用的专家服务套餐</view>
+              <view class="panel-title">套餐管理</view>
+              <view class="panel-desc">统一管理 VIP 套餐、额度套餐和专家套餐；下架只影响新购买。</view>
             </view>
             <view class="panel-actions">
               <button size="mini" class="primary-btn" @click="openPackageForm">新增套餐</button>
-              <button size="mini" @click="loadMarketGovernance">刷新</button>
+              <button size="mini" @click="loadAdminPackages">刷新</button>
             </view>
           </view>
 
-          <view v-if="!marketPackages.length" class="state">暂无服务套餐</view>
-          <view v-for="item in marketPackages" :key="item.id" class="market-card">
+          <view class="package-tabs">
+            <view v-for="item in packageScopeTabs" :key="item.value" :class="['package-tab', packageScope === item.value ? 'active' : '']" @click="changePackageScope(item.value)">
+              {{ item.label }}
+            </view>
+          </view>
+
+          <view v-if="!filteredAdminPackages.length" class="state">暂无套餐</view>
+          <view v-for="item in filteredAdminPackages" :key="`${item.package_scope}-${item.id}`" class="market-card">
             <view class="item-head"><text class="item-title">{{ item.name }}</text><text>¥{{ item.price }}</text></view>
-            <view class="copy">{{ expertTypeText(item.expert_type) }} · {{ item.delivery_days }} 天 · {{ packageStatusText(item.status) }}</view>
+            <view class="copy">{{ packageSummary(item) }} · {{ packageStatusText(item.status) }}</view>
             <view class="market-actions">
               <button size="mini" class="outline" @click="togglePackage(item)">{{ item.status === 'ACTIVE' ? '下架' : '上架' }}</button>
+              <button size="mini" class="outline" @click="openPackageForm(item)">编辑</button>
               <button size="mini" class="delete-btn" @click="deletePackage(item)">删除</button>
             </view>
           </view>
@@ -280,7 +293,7 @@
     <view v-if="expertDetailDialog" class="dialog-overlay" @click="closeExpertDetail">
       <view class="detail-dialog" @click.stop>
         <view class="dialog-title">{{ expertDetail?.display_name }}</view>
-        <view class="detail-meta">{{ expertTypeText(expertDetail?.expert_type) }} · {{ expertDetail?.years_experience }} 年经验 · {{ expertStatusText(expertDetail?.status) }}</view>
+        <view class="detail-meta">{{ expertTypeText(expertDetail?.expert_type) }} · {{ expertLevelText(expertDetail?.expert_level) }} · {{ expertDetail?.years_experience }} 年经验 · {{ expertStatusText(expertDetail?.status) }}</view>
         <view class="info-block"><text>个人简介</text><view>{{ expertDetail?.bio }}</view></view>
         <view class="info-block"><text>资历证明</text><view>{{ expertDetail?.credentials }}</view></view>
         <view v-if="expertDetail?.review_note" class="review-note">审核备注：{{ expertDetail.review_note }}</view>
@@ -290,26 +303,60 @@
 
     <view v-if="packageFormDialog" class="dialog-overlay" @click="closePackageForm">
       <view class="detail-dialog" @click.stop>
-        <view class="dialog-title">新增服务套餐</view>
+        <view class="dialog-title">{{ packageEditing ? '编辑套餐' : '新增套餐' }}</view>
+        <view class="field-label">套餐类型</view>
+        <picker :range="packageScopeLabels" :disabled="packageEditing" @change="changePackageFormScope">
+          <view class="input picker-value">{{ packageScopeText(pkg.package_scope) }}</view>
+        </picker>
         <view class="field-label">套餐名称</view>
-        <input class="input" :value="pkg.name" placeholder="例如：品牌命名基础精批" @input="updatePackageField('name', $event.detail.value)" />
-        <view class="field-label">服务专家类型</view>
-        <picker :range="typeLabels" @change="changeExpertType">
+        <input class="input" :value="pkg.name" placeholder="例如：月度 VIP / 30 次起名包 / 品牌命名精批" @input="updatePackageField('name', $event.detail.value)" />
+
+        <view v-if="pkg.package_scope === 'EXPERT_SERVICE'" class="field-label">服务专家类型</view>
+        <picker v-if="pkg.package_scope === 'EXPERT_SERVICE'" :range="typeLabels" @change="changeExpertType">
           <view class="input picker-value">{{ expertTypeLabel }}</view>
         </picker>
+        <view v-if="pkg.package_scope === 'EXPERT_SERVICE'" class="field-label">专家级别</view>
+        <picker v-if="pkg.package_scope === 'EXPERT_SERVICE'" :range="expertLevelLabels" @change="changePackageExpertLevel">
+          <view class="input picker-value">{{ expertLevelText(pkg.expert_level) }}</view>
+        </picker>
+
         <view class="form-grid">
           <view>
             <view class="field-label">价格（元）</view>
-            <input class="input" type="number" :value="pkg.price" placeholder="199" @input="updatePackageField('price', $event.detail.value)" />
+            <input class="input" type="number" :value="pkg.price" placeholder="19.90" @input="updatePackageField('price', $event.detail.value)" />
           </view>
-          <view>
+          <view v-if="pkg.package_scope === 'VIP'">
+            <view class="field-label">有效天数</view>
+            <input class="input" type="number" :value="pkg.duration_days" placeholder="30" @input="updatePackageField('duration_days', $event.detail.value)" />
+          </view>
+          <view v-if="pkg.package_scope === 'NAMING_QUOTA'">
+            <view class="field-label">起名次数</view>
+            <input class="input" type="number" :value="pkg.api_quota" placeholder="30" @input="updatePackageField('api_quota', $event.detail.value)" />
+          </view>
+          <view v-if="pkg.package_scope === 'EXPERT_SERVICE'">
             <view class="field-label">交付天数</view>
             <input class="input" type="number" :value="pkg.delivery_days" placeholder="3" @input="updatePackageField('delivery_days', $event.detail.value)" />
           </view>
         </view>
+
+        <view v-if="pkg.package_scope === 'VIP'" class="form-grid">
+          <view>
+            <view class="field-label">每月起名次数</view>
+            <input class="input" type="number" :value="pkg.naming_daily_quota" placeholder="100" @input="updatePackageField('naming_daily_quota', $event.detail.value)" />
+          </view>
+          <view>
+            <view class="field-label">每月品牌生成次数</view>
+            <input class="input" type="number" :value="pkg.visual_daily_quota" placeholder="20" @input="updatePackageField('visual_daily_quota', $event.detail.value)" />
+          </view>
+          <view>
+            <view class="field-label">专家服务折扣</view>
+            <input class="input" type="number" :value="pkg.expert_discount" placeholder="0.90" @input="updatePackageField('expert_discount', $event.detail.value)" />
+          </view>
+        </view>
+
         <view class="field-label">服务说明</view>
-        <textarea class="textarea" :value="pkg.description" placeholder="说明报告内容和服务边界" @input="updatePackageField('description', $event.detail.value)" />
-        <view class="dialog-actions"><button @click="closePackageForm">取消</button><button class="primary-btn" :loading="packageSaving" @click="createPackage">新增套餐</button></view>
+        <textarea class="textarea" :value="pkg.description" placeholder="说明套餐内容和服务边界" @input="updatePackageField('description', $event.detail.value)" />
+        <view class="dialog-actions"><button @click="closePackageForm">取消</button><button class="primary-btn" :loading="packageSaving" @click="savePackage">保存套餐</button></view>
       </view>
     </view>
   </view>
@@ -326,7 +373,7 @@ const modules = [
   { key: 'knowledge', label: '知识库' },
   { key: 'audit', label: '审计日志' },
   { key: 'expert_reviews', label: '专家审核' },
-  { key: 'service_packages', label: '服务套餐' },
+  { key: 'service_packages', label: '套餐管理' },
   { key: 'community_reports', label: '社区举报' }
 ];
 
@@ -342,12 +389,16 @@ const resetLoading = ref(false);
 const users = reactive({ items: [], total: 0, page: 1, loading: false });
 const orders = reactive({ items: [], total: 0, page: 1, loading: false });
 const orderFilters = reactive({ keyword: '', status: '', order_type: '', payment_provider: '' });
+const syncOrderLoading = ref(null);
 const agents = reactive({ items: [], loading: false });
 const audit = reactive({ items: [], total: 0, page: 1, loading: false });
 const marketExperts = ref([]);
 const marketPackages = ref([]);
+const adminPackages = ref([]);
+const packageScope = ref('VIP');
 const communityReports = ref([]);
 const packageSaving = ref(false);
+const packageEditing = ref(null);
 const expertDetailDialog = ref(false);
 const expertDetail = ref(null);
 const packageFormDialog = ref(false);
@@ -364,6 +415,11 @@ const knowledgeStatusOptions = ['ACTIVE', 'INACTIVE', 'PROCESSING', 'FAILED'];
 const knowledgeStatusLabels = ['启用', '停用', '处理中', '失败'];
 const expertTypes = ['CULTURE_MASTER', 'BRAND_CONSULTANT'];
 const typeLabels = ['国学命名', '品牌咨询'];
+const expertLevels = ['STANDARD', 'SENIOR', 'MASTER'];
+const expertLevelLabels = ['标准专家', '高级专家', '大师专家'];
+const packageScopes = ['VIP', 'NAMING_QUOTA', 'EXPERT_SERVICE'];
+const packageScopeLabels = ['VIP套餐', '额度套餐', '专家套餐'];
+const packageScopeTabs = packageScopes.map((value, index) => ({ value, label: packageScopeLabels[index] }));
 
 const refundLoading = ref(false);
 const knowledgeLoading = ref(false);
@@ -374,9 +430,24 @@ const knowledgeForm = reactive({
   file_path: '',
   status: 'ACTIVE'
 });
-const pkg = reactive({ name: '', expert_type: 'CULTURE_MASTER', price: '', delivery_days: '3', description: '', status: 'ACTIVE' });
+const pkg = reactive({
+  package_scope: 'VIP',
+  name: '',
+  expert_type: 'CULTURE_MASTER',
+  expert_level: 'STANDARD',
+  price: '',
+  duration_days: '30',
+  api_quota: '30',
+  naming_daily_quota: '100',
+  visual_daily_quota: '20',
+  expert_discount: '0.90',
+  delivery_days: '3',
+  description: '',
+  status: 'ACTIVE'
+});
 const expertTypeLabel = computed(() => typeLabels[expertTypes.indexOf(pkg.expert_type)] || typeLabels[0]);
 const expertTypeText = value => typeLabels[expertTypes.indexOf(value)] || value;
+const filteredAdminPackages = computed(() => adminPackages.value.filter(item => item.package_scope === packageScope.value));
 const orderStatusFilterLabel = computed(() => orderStatusFilterLabels[orderStatusFilterOptions.indexOf(orderFilters.status)] || orderStatusFilterLabels[0]);
 const orderTypeFilterLabel = computed(() => orderTypeFilterLabels[orderTypeFilterOptions.indexOf(orderFilters.order_type)] || orderTypeFilterLabels[0]);
 const paymentProviderFilterLabel = computed(() => paymentProviderFilterLabels[paymentProviderFilterOptions.indexOf(orderFilters.payment_provider)] || paymentProviderFilterLabels[0]);
@@ -418,6 +489,13 @@ const paymentProviderText = value => ({
   ALIPAY_SANDBOX: '支付宝'
 }[value] || value || '-');
 const packageStatusText = commonStatusText;
+const expertLevelText = value => expertLevelLabels[expertLevels.indexOf(value || 'STANDARD')] || value || '标准专家';
+const packageScopeText = value => packageScopeLabels[packageScopes.indexOf(value || 'VIP')] || value || 'VIP套餐';
+const packageSummary = item => {
+  if (item.package_scope === 'VIP') return `VIP · ${item.duration_days || 0} 天 · 起名 ${item.naming_daily_quota || 0}/月 · 品牌生成 ${item.visual_daily_quota || 0}/月 · 专家折扣 ${item.expert_discount || 1}`;
+  if (item.package_scope === 'NAMING_QUOTA') return `额度 · ${item.api_quota || 0} 次`;
+  return `${expertTypeText(item.expert_type)} · ${expertLevelText(item.expert_level)} · ${item.delivery_days || 0} 天`;
+};
 const expertStatusText = value => ({
   PENDING: '待审核',
   APPROVED: '已通过',
@@ -458,7 +536,8 @@ const switchModule = (key) => {
   if (key === 'orders' && !orders.items.length) loadOrders();
   if (key === 'agents' && !agents.items.length) loadAgents();
   if (key === 'audit' && !audit.items.length) loadAuditLogs();
-  if (['expert_reviews', 'service_packages', 'community_reports'].includes(key)) loadMarketGovernance();
+  if (key === 'service_packages') loadAdminPackages();
+  if (['expert_reviews', 'community_reports'].includes(key)) loadMarketGovernance();
 };
 
 const formatTime = (value) => {
@@ -597,6 +676,19 @@ const reviewRefundById = async (refundId, status, note = null) => {
 };
 
 const canReviewRefund = item => item.refund_id && item.refund_status === 'PENDING';
+const canSyncAlipayOrder = item => item.payment_provider === 'ALIPAY_SANDBOX' && item.out_trade_no && item.status !== 'PAID' && item.status !== 'REFUNDED';
+
+const syncOrderPayment = async item => {
+  if (!canSyncAlipayOrder(item)) return;
+  syncOrderLoading.value = item.id;
+  try {
+    const result = await http.syncAdminOrderPayment(item.id);
+    uni.showToast({ title: result.status === 'PAID' ? '支付已同步' : `当前状态：${financeStatusText(result.status)}`, icon: 'none' });
+    await loadOrders();
+  } finally {
+    syncOrderLoading.value = null;
+  }
+};
 
 const quickReviewRefund = async (item, status) => {
   if (!canReviewRefund(item)) return;
@@ -679,17 +771,20 @@ const nextAudit = () => {
 
 const loadMarketGovernance = async () => {
   try {
-    const [expertResult, packageResult, reportResult] = await Promise.all([
+    const [expertResult, reportResult] = await Promise.all([
       http.getAdminExperts(),
-      http.getAdminServicePackages(),
       http.getAdminCommunityReports()
     ]);
     marketExperts.value = expertResult.items || [];
-    marketPackages.value = packageResult || [];
     communityReports.value = reportResult.items || [];
   } catch (e) {
     console.error(e);
   }
+};
+
+const loadAdminPackages = async () => {
+  adminPackages.value = await http.getAdminPackages();
+  marketPackages.value = adminPackages.value.filter(item => item.package_scope === 'EXPERT_SERVICE');
 };
 
 const reviewExpert = async (item, status) => {
@@ -703,11 +798,20 @@ const reviewExpert = async (item, status) => {
     success: async result => {
       if (!result.confirm) return;
       if (status !== 'APPROVED' && !String(result.content || '').trim()) return uni.showToast({ title: '请填写审核原因', icon: 'none' });
-      await http.reviewAdminExpert(item.id, { status, review_note: String(result.content || '').trim() || null });
+      await http.reviewAdminExpert(item.id, { status, review_note: String(result.content || '').trim() || null, expert_level: item.expert_level || 'STANDARD' });
       await loadMarketGovernance();
       await loadUsers();
     }
   });
+};
+
+const setExpertLevel = async (item, expertLevel) => {
+  await http.reviewAdminExpert(item.id, {
+    status: item.status,
+    review_note: item.review_note || null,
+    expert_level: expertLevel
+  });
+  await loadMarketGovernance();
 };
 
 const openExpertDetail = item => {
@@ -719,46 +823,97 @@ const closeExpertDetail = () => {
   expertDetail.value = null;
 };
 
-const resetPackageForm = () => Object.assign(pkg, { name: '', expert_type: 'CULTURE_MASTER', price: '', delivery_days: '3', description: '', status: 'ACTIVE' });
-const openPackageForm = () => {
-  resetPackageForm();
+const resetPackageForm = (scope = packageScope.value) => Object.assign(pkg, {
+  package_scope: scope,
+  name: '',
+  expert_type: 'CULTURE_MASTER',
+  expert_level: 'STANDARD',
+  price: '',
+  duration_days: '30',
+  api_quota: '30',
+  naming_daily_quota: '100',
+  visual_daily_quota: '20',
+  expert_discount: '0.90',
+  delivery_days: '3',
+  description: '',
+  status: 'ACTIVE'
+});
+const openPackageForm = (item = null) => {
+  packageEditing.value = item;
+  if (item) Object.assign(pkg, { ...item });
+  else resetPackageForm();
   packageFormDialog.value = true;
 };
 const closePackageForm = () => {
   packageFormDialog.value = false;
+  packageEditing.value = null;
 };
 const updatePackageField = (field, value) => { pkg[field] = value; };
 const changeExpertType = event => { pkg.expert_type = expertTypes[Number(event.detail.value)]; };
-const createPackage = async () => {
+const changePackageExpertLevel = event => { pkg.expert_level = expertLevels[Number(event.detail.value)]; };
+const changePackageFormScope = event => {
+  if (packageEditing.value) return;
+  const nextScope = packageScopes[Number(event.detail.value)] || 'VIP';
+  resetPackageForm(nextScope);
+};
+const changePackageScope = scope => {
+  packageScope.value = scope;
+};
+const packagePayload = () => {
   const price = Number(pkg.price);
-  const deliveryDays = Number(pkg.delivery_days);
-  if (!pkg.name.trim() || !pkg.description.trim() || !Number.isFinite(price) || price <= 0 || !Number.isInteger(deliveryDays) || deliveryDays <= 0) {
-    return uni.showToast({ title: '请完整填写套餐名称、价格、天数和说明', icon: 'none' });
+  if (!pkg.name.trim() || !Number.isFinite(price) || price < 0) return null;
+  const payload = {
+    package_scope: pkg.package_scope,
+    name: pkg.name.trim(),
+    price,
+    status: pkg.status || 'ACTIVE',
+    description: pkg.description || null
+  };
+  if (pkg.package_scope === 'VIP') {
+    payload.duration_days = Number(pkg.duration_days);
+    payload.naming_daily_quota = Number(pkg.naming_daily_quota || 0);
+    payload.visual_daily_quota = Number(pkg.visual_daily_quota || 0);
+    payload.expert_discount = Number(pkg.expert_discount || 1);
+    if (!Number.isFinite(payload.duration_days) || payload.duration_days <= 0) return null;
+  } else if (pkg.package_scope === 'NAMING_QUOTA') {
+    payload.api_quota = Number(pkg.api_quota);
+    if (!Number.isFinite(payload.api_quota) || payload.api_quota <= 0) return null;
+  } else {
+    payload.expert_type = pkg.expert_type;
+    payload.expert_level = pkg.expert_level || 'STANDARD';
+    payload.delivery_days = Number(pkg.delivery_days);
+    if (!Number.isFinite(payload.delivery_days) || payload.delivery_days <= 0) return null;
   }
+  return payload;
+};
+const savePackage = async () => {
+  const payload = packagePayload();
+  if (!payload) return uni.showToast({ title: '请完整填写套餐名称和价格', icon: 'none' });
   packageSaving.value = true;
   try {
-    await http.createAdminServicePackage({ ...pkg, price, delivery_days: deliveryDays });
+    if (packageEditing.value) await http.updateAdminPackage(pkg.package_scope, packageEditing.value.id, payload);
+    else await http.createAdminPackage(payload);
     resetPackageForm();
     closePackageForm();
-    marketPackages.value = await http.getAdminServicePackages();
-    uni.showToast({ title: '套餐已添加', icon: 'success' });
+    await loadAdminPackages();
+    uni.showToast({ title: '套餐已保存', icon: 'success' });
   } finally {
     packageSaving.value = false;
   }
 };
 const togglePackage = async item => {
-  await http.updateAdminServicePackage(item.id, { status: item.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' });
-  marketPackages.value = await http.getAdminServicePackages();
+  await http.updateAdminPackage(item.package_scope, item.id, { status: item.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' });
+  await loadAdminPackages();
 };
 const deletePackage = item => uni.showModal({
-  title: '删除服务套餐',
+  title: '删除套餐',
   content: `确认删除「${item.name}」？已有订单引用的套餐不能删除，只能下架。`,
   confirmColor: '#dc2626',
   success: async result => {
     if (!result.confirm) return;
-    await http.deleteAdminServicePackage(item.id);
+    await http.deleteAdminPackage(item.package_scope, item.id);
     uni.showToast({ title: '套餐已删除' });
-    marketPackages.value = await http.getAdminServicePackages();
+    await loadAdminPackages();
   }
 });
 const moderateReport = async (id, action) => {
@@ -882,7 +1037,7 @@ const logout = () => {
   min-width: 980rpx;
 }
 .min-orders {
-  min-width: 1900rpx;
+  min-width: 2140rpx;
 }
 .tr {
   display: grid;
@@ -894,7 +1049,7 @@ const logout = () => {
   font-size: 24rpx;
 }
 .min-orders .tr {
-  grid-template-columns: 90rpx 120rpx 240rpx 140rpx 160rpx 170rpx 320rpx 180rpx 240rpx 240rpx;
+  grid-template-columns: 90rpx 120rpx 240rpx 140rpx 160rpx 170rpx 320rpx 180rpx 240rpx 240rpx 240rpx;
 }
 .th {
   color: #475569;
@@ -1021,6 +1176,26 @@ const logout = () => {
   padding: 20rpx 22rpx;
   margin-bottom: 18rpx;
   background: #ffffff;
+}
+.package-tabs {
+  display: flex;
+  gap: 12rpx;
+  flex-wrap: wrap;
+  margin-bottom: 22rpx;
+}
+.package-tab {
+  padding: 14rpx 22rpx;
+  border: 1px solid #dbe3ef;
+  border-radius: 8rpx;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 24rpx;
+  cursor: pointer;
+}
+.package-tab.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
 }
 .clickable-card {
   cursor: pointer;

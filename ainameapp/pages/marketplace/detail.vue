@@ -11,23 +11,20 @@
 import { computed, reactive, ref } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
 import http from '@/http/http.js';
+import { openAlipayWindow, startAlipayPayment } from '@/utils/alipayPayment.js';
 
 const expert = ref(null);
 const packages = ref([]);
 const assets = ref([]);
 const loading = ref(false);
 const form = reactive({ package_id: null, naming_asset_id: null, requirements: '' });
+const PENDING_EXPERT_ALIPAY_KEY = 'pending_expert_alipay_out_trade_no';
 const typeLabel = computed(() => expert.value?.expert_type === 'CULTURE_MASTER' ? '国学命名' : '品牌咨询');
 const assetLabels = computed(() => assets.value.map(item => `${item.name} · ${item.category}`));
 const selectedAssetLabel = computed(() => assets.value.find(item => item.id === form.naming_asset_id)?.name || '请选择已收藏的名字');
 
-const redirectToAlipay = payment => {
-  // #ifdef H5
-  window.location.href = payment.payment_url;
-  // #endif
-  // #ifndef H5
-  uni.showToast({ title: '当前仅 H5 支持支付宝沙箱支付', icon: 'none' });
-  // #endif
+const redirectToAlipay = (payment, payWindow = null) => {
+  startAlipayPayment(payment, { pendingKey: PENDING_EXPERT_ALIPAY_KEY, payWindow });
 };
 
 const createOrder = async () => {
@@ -43,8 +40,9 @@ const createOrder = async () => {
       content: `应付 ¥${order.amount}，是否前往支付宝沙箱支付？`,
       success: async result => {
         if (result.confirm) {
+          const payWindow = openAlipayWindow();
           const payment = await http.startExpertAlipay(order.id);
-          redirectToAlipay(payment);
+          redirectToAlipay(payment, payWindow);
         } else {
           uni.reLaunch({ url: '/pages/assets/index?tab=orders' });
         }
@@ -57,7 +55,8 @@ const createOrder = async () => {
 
 onLoad(async query => {
   expert.value = await http.getExpert(Number(query.id));
-  packages.value = await http.getExpertPackages(expert.value.expert_type);
+  packages.value = await http.getExpertPackages('', expert.value.id);
+  form.package_id = packages.value[0]?.id || null;
   if (uni.getStorageSync('token')) assets.value = (await http.getNameAssets()).items;
 });
 </script>

@@ -20,6 +20,8 @@ const title = ref('正在确认支付');
 const message = ref('正在向后端同步支付宝沙箱交易结果。');
 const target = ref('/pages/recharge/index');
 const targetText = ref('返回充值中心');
+const PENDING_MEMBERSHIP_ALIPAY_KEY = 'pending_membership_alipay_out_trade_no';
+const PENDING_EXPERT_ALIPAY_KEY = 'pending_expert_alipay_out_trade_no';
 const paymentStatusText = value => ({
   PENDING: '待支付',
   PAID: '已支付',
@@ -41,6 +43,8 @@ const syncPayment = async () => {
     if (result.status === 'PAID') {
       title.value = '支付成功';
       message.value = '权益或订单状态已同步完成。';
+      uni.removeStorageSync(PENDING_MEMBERSHIP_ALIPAY_KEY);
+      uni.removeStorageSync(PENDING_EXPERT_ALIPAY_KEY);
       if (result.order_type === 'EXPERT_SERVICE') {
         target.value = '/pages/assets/index?tab=orders';
         targetText.value = '查看专家订单';

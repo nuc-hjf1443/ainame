@@ -9,10 +9,14 @@ from repository.admin_repo import AdminRepository
 from schemas.admin_schemas import (
     AgentConfigOut,
     AgentConfigUpdateIn,
+    AdminPackageIn,
+    AdminPackageOut,
+    AdminPackageUpdateIn,
     BanUserOut,
     KnowledgeBaseOut,
     KnowledgeBaseUpsertIn,
     OrderPageOut,
+    OrderOut,
     RefundAuditPageOut,
     RefundAuditOut,
     RefundReviewIn,
@@ -22,6 +26,49 @@ from schemas.admin_schemas import (
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+
+
+@router.get("/packages", response_model=list[AdminPackageOut])
+async def list_admin_packages(
+        package_scope: str | None = Query(default=None, max_length=30),
+        session: AsyncSession = Depends(get_session),
+):
+    return await AdminRepository(session).list_packages(package_scope)
+
+
+@router.post("/packages", response_model=AdminPackageOut)
+async def create_admin_package(data: AdminPackageIn, session: AsyncSession = Depends(get_session)):
+    values = data.model_dump()
+    if values["package_scope"] == "EXPERT_SERVICE" and (not values.get("expert_type") or not values.get("delivery_days")):
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="专家套餐必须填写专家类型和交付天数")
+    return await AdminRepository(session).create_package(values)
+
+
+@router.put("/packages/{package_scope}/{package_id}", response_model=AdminPackageOut)
+async def update_admin_package(
+        package_scope: str,
+        package_id: int,
+        data: AdminPackageUpdateIn,
+        session: AsyncSession = Depends(get_session),
+):
+    package = await AdminRepository(session).update_package(package_scope, package_id, data.model_dump(exclude_unset=True))
+    if not package:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="套餐不存在")
+    return package
+
+
+@router.delete("/packages/{package_scope}/{package_id}")
+async def delete_admin_package(
+        package_scope: str,
+        package_id: int,
+        session: AsyncSession = Depends(get_session),
+):
+    result = await AdminRepository(session).delete_package(package_scope, package_id)
+    if result is None:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="套餐不存在")
+    if result is False:
+        raise HTTPException(status_code=409, detail="套餐已有订单引用，不能删除，请改为下架")
+    return {"id": package_id, "package_scope": package_scope, "deleted": True}
 
 
 @router.get("/users", response_model=UserPageOut)
@@ -93,6 +140,21 @@ async def list_orders(
     repository = AdminRepository(session)
     orders, total = await repository.list_orders(page, page_size, status, order_type, payment_provider, keyword)
     return {"items": orders, "total": total, "page": page, "page_size": page_size}
+
+
+@router.post("/finance/orders/{order_id}/sync", response_model=OrderOut)
+async def sync_finance_order_payment(
+        order_id: int,
+        session: AsyncSession = Depends(get_session),
+):
+    repository = AdminRepository(session)
+    try:
+        order = await repository.sync_alipay_order(order_id)
+    except AlipayError as exc:
+        raise HTTPException(status_code=HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    if not order:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="支付宝订单不存在或无法同步")
+    return order
 
 
 @router.get("/finance/refunds", response_model=RefundAuditPageOut)

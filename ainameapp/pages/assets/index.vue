@@ -42,7 +42,7 @@
         </view>
 
         <view v-if="tab === 'kits'" class="kit-grid">
-          <view v-for="kit in brandKits" :key="kit.id" class="kit-card">
+          <view v-for="kit in brandKits" :key="kit.id" class="kit-card clickable-kit" @click="openKitDetail(kit)">
             <view class="kit-head">
               <view>
                 <view class="asset-name">{{ kit.name }}</view>
@@ -58,14 +58,45 @@
             </view>
             <view class="visual-grid">
               <view v-for="asset in kit.assets" :key="asset.id" class="visual-tile">
-                <image v-if="asset.image_url" :src="asset.image_url" mode="aspectFill" @click="previewKit(kit, asset.image_url)" />
+                <image v-if="asset.image_url" :src="asset.image_url" mode="aspectFill" @click.stop="previewKit(kit, asset.image_url)" />
                 <view v-else class="visual-placeholder">{{ asset.status === 'FAILED' ? '失败' : '生成中' }}</view>
                 <view class="visual-label">{{ assetLabel(asset) }}</view>
               </view>
             </view>
-            <button class="danger-btn" @click="deleteKit(kit)">删除整套方案</button>
+            <button class="danger-btn" @click.stop="deleteKit(kit)">删除整套方案</button>
           </view>
           <view v-if="!brandKits.length" class="empty panel">还没有企业品牌视觉方案</view>
+        </view>
+
+        <view v-if="kitDetailOpen && selectedBrandKit" class="overlay" @click="closeKitDetail">
+          <view class="sheet kit-detail-sheet" @click.stop>
+            <view class="kit-detail-head">
+              <view>
+                <view class="sheet-title">{{ selectedBrandKit.name }}</view>
+                <view class="muted">{{ selectedBrandKit.moral || '暂无寓意说明' }}</view>
+              </view>
+              <text :class="['status', selectedBrandKit.status]">{{ statusText(selectedBrandKit.status) }}</text>
+            </view>
+            <view class="kit-detail-info">
+              <view><text>行业</text><text>{{ selectedBrandKit.industry || '-' }}</text></view>
+              <view><text>目标用户</text><text>{{ selectedBrandKit.audience || '-' }}</text></view>
+              <view><text>视觉风格</text><text>{{ selectedBrandKit.design_style || '-' }}</text></view>
+              <view><text>品牌主色</text><text>{{ selectedBrandKit.primary_color || '-' }}</text></view>
+              <view v-if="selectedBrandKit.slogan"><text>品牌口号</text><text>{{ selectedBrandKit.slogan }}</text></view>
+            </view>
+            <view class="field-label">视觉素材</view>
+            <view class="detail-visual-grid">
+              <view v-for="asset in selectedBrandKit.assets || []" :key="asset.id" class="visual-tile">
+                <image v-if="asset.image_url" :src="asset.image_url" mode="aspectFill" @click="previewKit(selectedBrandKit, asset.image_url)" />
+                <view v-else class="visual-placeholder">{{ asset.status === 'FAILED' ? '失败' : '生成中' }}</view>
+                <view class="visual-label">{{ assetLabel(asset) }}</view>
+              </view>
+            </view>
+            <view class="dialog-actions">
+              <button class="outline" @click="closeKitDetail">关闭</button>
+              <button class="danger-inline" @click="deleteKit(selectedBrandKit)">删除整套方案</button>
+            </view>
+          </view>
         </view>
 
         <view v-if="tab === 'orders'" class="panel">
@@ -141,6 +172,7 @@ import { onLoad, onShow } from '@dcloudio/uni-app';
 import http from '@/http/http.js';
 import DashboardLayout from '@/components/DashboardLayout/DashboardLayout.vue';
 import BrandKitPanel from '@/components/BrandKitPanel/BrandKitPanel.vue';
+import { openAlipayWindow, startAlipayPayment } from '@/utils/alipayPayment.js';
 
 const token = ref('');
 const tab = ref('names');
@@ -152,6 +184,8 @@ const experts = ref([]);
 const packages = ref([]);
 const profile = ref(null);
 const brandKitDraft = ref(null);
+const kitDetailOpen = ref(false);
+const selectedBrandKit = ref(null);
 const orderOpen = ref(false);
 const orderAsset = ref(null);
 const selectedExpert = ref(null);
@@ -161,12 +195,14 @@ const reviewSubmitting = ref(false);
 const reviewOrder = ref(null);
 const orderForm = reactive({ package_id: null, requirements: '' });
 const reviewForm = reactive({ rating: 5, content: '' });
+const PENDING_EXPERT_ALIPAY_KEY = 'pending_expert_alipay_out_trade_no';
 
 const tabs = [{ label: '名字资产', value: 'names' }, { label: '企业视觉方案', value: 'kits' }, { label: '专家订单', value: 'orders' }];
 const categories = ['全部', '人名', '企业名', '宠物名'];
 const ratings = [5, 4, 3, 2, 1];
 const filteredNames = computed(() => category.value === '全部' ? names.value : names.value.filter(item => item.category === category.value));
-const selectedPackages = computed(() => selectedExpert.value ? packages.value.filter(item => item.expert_type === selectedExpert.value.expert_type) : []);
+const packageMatchesExpert = (item, expert) => item.expert_type === expert.expert_type && (item.expert_level || 'STANDARD') === (expert.expert_level || 'STANDARD');
+const selectedPackages = computed(() => selectedExpert.value ? packages.value.filter(item => packageMatchesExpert(item, selectedExpert.value)) : []);
 const labelType = value => value === 'CULTURE_MASTER' ? '国学命名专家' : '品牌咨询师';
 const payable = item => profile.value?.is_vip ? (Number(item.price) * 0.9).toFixed(2) : Number(item.price).toFixed(2);
 const statusText = value => ({ PENDING: '准备中', PROCESSING: '生成中', SUCCESS: '已完成', FAILED: '失败' }[value] || value);
@@ -185,18 +221,28 @@ const paymentStatusText = value => ({
   REFUNDED: '已退款'
 }[value] || value || '-');
 const assetLabel = asset => `${asset.asset_type === 'LOGO' ? 'Logo' : '名片'} ${asset.variant_index}`;
-const redirectToAlipay = payment => {
-  // #ifdef H5
-  window.location.href = payment.payment_url;
-  // #endif
-  // #ifndef H5
-  uni.showToast({ title: '当前仅 H5 支持支付宝沙箱支付', icon: 'none' });
-  // #endif
+const redirectToAlipay = (payment, payWindow = null) => {
+  startAlipayPayment(payment, { pendingKey: PENDING_EXPERT_ALIPAY_KEY, payWindow });
+};
+
+const syncPendingExpertPayment = async () => {
+  const outTradeNo = uni.getStorageSync(PENDING_EXPERT_ALIPAY_KEY);
+  if (!outTradeNo || !uni.getStorageSync('token')) return;
+  try {
+    const result = await http.syncAlipayOrder(outTradeNo, { silent: true });
+    if (result.status === 'PAID') {
+      uni.removeStorageSync(PENDING_EXPERT_ALIPAY_KEY);
+      uni.showToast({ title: '支付已同步', icon: 'none' });
+    }
+  } catch (e) {
+    // Keep the pending trade number so the next page visit can retry.
+  }
 };
 
 const load = async () => {
   token.value = uni.getStorageSync('token');
   if (!token.value) return;
+  await syncPendingExpertPayment();
   const [nameResult, kitResult, orderResult, profileResult] = await Promise.all([
     http.getNameAssets(1, 100),
     http.getBrandKits(1, 50),
@@ -229,7 +275,7 @@ const openOrder = async asset => {
 
 const selectExpert = expert => {
   selectedExpert.value = expert;
-  orderForm.package_id = packages.value.find(item => item.expert_type === expert.expert_type)?.id || null;
+  orderForm.package_id = packages.value.find(item => packageMatchesExpert(item, expert))?.id || null;
 };
 
 const closeOrder = () => { orderOpen.value = false; orderAsset.value = null; selectedExpert.value = null; };
@@ -252,8 +298,9 @@ const createOrder = async () => {
       content: `实付 ¥${order.amount}，是否前往支付宝沙箱支付？`,
       success: async result => {
         if (result.confirm) {
+          const payWindow = openAlipayWindow();
           const payment = await http.startExpertAlipay(order.id);
-          redirectToAlipay(payment);
+          redirectToAlipay(payment, payWindow);
         } else {
           tab.value = 'orders';
           await load();
@@ -277,11 +324,28 @@ const startBrandKit = asset => {
 };
 const closeBrandKit = async () => { brandKitDraft.value = null; await load(); };
 const previewKit = (kit, url) => uni.previewImage({ current: url, urls: kit.assets.filter(item => item.image_url).map(item => item.image_url) });
+const openKitDetail = async kit => {
+  try {
+    selectedBrandKit.value = await http.getBrandKit(kit.id);
+  } catch (e) {
+    selectedBrandKit.value = kit;
+  }
+  kitDetailOpen.value = true;
+};
+const closeKitDetail = () => {
+  kitDetailOpen.value = false;
+  selectedBrandKit.value = null;
+};
 const removeName = id => uni.showModal({ title: '取消收藏', content: '确认取消收藏这个名字？', success: async result => { if (result.confirm) { await http.deleteNameAsset(id); await load(); } } });
-const deleteKit = kit => uni.showModal({ title: '删除品牌视觉方案', content: `确认删除「${kit.name}」整套方案及其 Logo/名片？`, success: async result => { if (result.confirm) { await http.deleteBrandKit(kit.id); await load(); } } });
-const pay = async id => { const payment = await http.startExpertAlipay(id); redirectToAlipay(payment); };
+const deleteKit = kit => uni.showModal({ title: '删除品牌视觉方案', content: `确认删除「${kit.name}」整套方案及其 Logo/名片？`, success: async result => { if (result.confirm) { await http.deleteBrandKit(kit.id); closeKitDetail(); await load(); } } });
+const pay = async id => {
+  const payWindow = openAlipayWindow();
+  const payment = await http.startExpertAlipay(id);
+  redirectToAlipay(payment, payWindow);
+};
 const syncOrderPayment = async order => {
   const result = await http.syncAlipayOrder(order.out_trade_no);
+  if (result.status === 'PAID') uni.removeStorageSync(PENDING_EXPERT_ALIPAY_KEY);
   uni.showToast({ title: result.status === 'PAID' ? '支付已同步' : `当前状态：${paymentStatusText(result.status)}`, icon: 'none' });
   await load();
 };
@@ -334,9 +398,21 @@ onShow(load);
 <style scoped>
 .outline{background:#fff;color:#4b5563;border:1px solid #d1d5db;border-radius:8px}
 .review-sheet{width:min(720rpx,100%)}
+.clickable-kit{cursor:pointer;transition:border-color .2s,box-shadow .2s}
+.clickable-kit:hover{border-color:#c7d2fe;box-shadow:0 10rpx 30rpx rgba(79,70,229,.08)}
+.kit-detail-sheet{width:min(1120rpx,100%)}
+.kit-detail-head{display:flex;justify-content:space-between;gap:24rpx;align-items:flex-start;margin-bottom:22rpx}
+.kit-detail-info{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16rpx;border-top:1px solid #f3f4f6;border-bottom:1px solid #f3f4f6;padding:22rpx 0;margin:20rpx 0}
+.kit-detail-info view{display:flex;justify-content:space-between;gap:20rpx;font-size:25rpx;line-height:1.6}
+.kit-detail-info text:first-child{color:#6b7280;white-space:nowrap}
+.kit-detail-info text:last-child{text-align:right}
+.detail-visual-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16rpx}
+.detail-visual-grid .visual-tile image,.detail-visual-grid .visual-placeholder{height:240rpx}
+.danger-inline{background:#fff;color:#dc2626;border:1px solid #fecaca;border-radius:8px}
 .rating-row{display:flex;gap:12rpx;flex-wrap:wrap}
 .rating-chip{padding:14rpx 22rpx;border:1px solid #d1d5db;border-radius:999px;color:#4b5563;background:#fff;font-size:26rpx}
 .rating-chip.selected{background:#eef2ff;border-color:#4f46e5;color:#4f46e5;font-weight:700}
 .dialog-actions{display:flex;justify-content:flex-end;gap:14rpx}
 .dialog-actions button{margin:24rpx 0 0}
+@media(max-width:900px){.kit-detail-info,.detail-visual-grid{grid-template-columns:1fr}}
 </style>

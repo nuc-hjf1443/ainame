@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.status import HTTP_502_BAD_GATEWAY
 
 from services.alipay_service import AlipayClient, AlipayError
+from core.payment_urls import alipay_notify_url, alipay_return_url
 from services.quota_service import quota_snapshot
 from dependencies import get_current_user, get_session, require_mock_payment_enabled
 from models.marketplace import ExpertProfile
@@ -35,6 +36,7 @@ async def create_membership_order(data: MembershipOrderIn, user: User = Depends(
 @router.post("/membership/orders/{order_id}/alipay", response_model=AlipayPaymentOut)
 async def create_membership_alipay_payment(
         order_id: int,
+        request: Request,
         user: User = Depends(get_current_user),
         session: AsyncSession = Depends(get_session),
 ):
@@ -43,7 +45,11 @@ async def create_membership_alipay_payment(
     if not order:
         raise HTTPException(409, detail="充值订单不存在或不能发起支付")
     try:
-        payment_url = AlipayClient().build_pay_url(order)
+        payment_url = AlipayClient().build_pay_url(
+            order,
+            notify_url=alipay_notify_url(request),
+            return_url=alipay_return_url(request),
+        )
     except AlipayError as exc:
         raise HTTPException(status_code=HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return {"order_id": order.id, "out_trade_no": order.out_trade_no or "", "payment_url": payment_url}
@@ -75,8 +81,18 @@ async def build_profile(user: User, session: AsyncSession):
         "vip_package_name": package.name if package else None,
         "vip_expires_at": membership.end_time if membership else None,
         "naming_balance": snapshot["naming_balance"],
-        "naming_quota": {"used": snapshot["naming_used"], "limit": snapshot["naming_limit"], "remaining": max(0, snapshot["naming_limit"] - snapshot["naming_used"])},
-        "visual_quota": {"used": snapshot["visual_used"], "limit": snapshot["visual_limit"], "remaining": max(0, snapshot["visual_limit"] - snapshot["visual_used"])},
+        "naming_quota": {
+            "used": snapshot["naming_used"],
+            "limit": snapshot["naming_limit"],
+            "remaining": max(0, snapshot["naming_limit"] - snapshot["naming_used"]),
+            "period": snapshot["quota_period"],
+        },
+        "visual_quota": {
+            "used": snapshot["visual_used"],
+            "limit": snapshot["visual_limit"],
+            "remaining": max(0, snapshot["visual_limit"] - snapshot["visual_used"]),
+            "period": snapshot["quota_period"],
+        },
     }
 
 

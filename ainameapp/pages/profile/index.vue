@@ -17,13 +17,13 @@
       </view>
 
       <view class="section quota-card">
-        <view class="section-title">今日额度</view>
+        <view class="section-title">{{ profile.is_vip ? '本月额度' : '账号累计额度' }}</view>
         <view class="quota-row">
           <view class="quota-head"><text>智能起名</text><text>{{ profile.naming_quota.used }} / {{ profile.naming_quota.limit }}</text></view>
           <view class="progress"><view class="progress-value" :style="{width: quotaPercent(profile.naming_quota)}"></view></view>
         </view>
         <view class="quota-row">
-          <view class="quota-head"><text>视觉生成</text><text>{{ profile.visual_quota.used }} / {{ profile.visual_quota.limit }}</text></view>
+          <view class="quota-head"><text>品牌生成</text><text>{{ profile.visual_quota.used }} / {{ profile.visual_quota.limit }}</text></view>
           <view class="progress"><view class="progress-value visual-progress" :style="{width: quotaPercent(profile.visual_quota)}"></view></view>
         </view>
         <view class="quota-balance-row">

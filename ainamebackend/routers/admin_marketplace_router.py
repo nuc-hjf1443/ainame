@@ -30,7 +30,7 @@ async def admin_experts(page: int = Query(1, ge=1), page_size: int = Query(20, g
 @router.put("/experts/{expert_id}/review", response_model=ExpertOut)
 async def review_expert(expert_id: int, data: ExpertReviewDecisionIn, admin: User = Depends(require_admin), session: AsyncSession = Depends(get_session)):
     repo = MarketplaceRepository(session)
-    profile = await repo.review_expert(expert_id, admin.id, data.status, data.review_note)
+    profile = await repo.review_expert(expert_id, admin.id, data.status, data.review_note, data.expert_level)
     if not profile:
         raise HTTPException(404, detail="专家申请不存在")
     return await repo.expert_payload(profile)

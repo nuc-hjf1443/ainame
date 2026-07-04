@@ -65,12 +65,19 @@ class MarketplaceRepository:
         profile = await self.session.scalar(select(ExpertProfile).where(*conditions))
         return await self.expert_payload(profile) if profile else None
 
-    async def list_packages(self, expert_type: str | None = None, active_only: bool = True):
+    async def list_packages(
+            self,
+            expert_type: str | None = None,
+            active_only: bool = True,
+            expert_level: str | None = None,
+    ):
         conditions = []
         if active_only:
             conditions.append(ExpertServicePackage.status == "ACTIVE")
         if expert_type:
             conditions.append(ExpertServicePackage.expert_type == expert_type)
+        if expert_level:
+            conditions.append(ExpertServicePackage.expert_level == expert_level)
         result = await self.session.execute(select(ExpertServicePackage).where(*conditions).order_by(ExpertServicePackage.price, ExpertServicePackage.id))
         return result.scalars().all()
 
@@ -113,6 +120,7 @@ class MarketplaceRepository:
             or not package
             or not asset
             or expert.expert_type != package.expert_type
+            or (expert.expert_level or "STANDARD") != (package.expert_level or "STANDARD")
             or expert.user_id == customer_id
         ):
             return None
@@ -265,11 +273,20 @@ class MarketplaceRepository:
         await self.session.refresh(review)
         return review
 
-    async def review_expert(self, expert_id: int, admin_id: int, status: str, note: str | None):
+    async def review_expert(
+            self,
+            expert_id: int,
+            admin_id: int,
+            status: str,
+            note: str | None,
+            expert_level: str | None = None,
+    ):
         profile = await self.session.get(ExpertProfile, expert_id)
         if not profile:
             return None
         profile.status, profile.review_note = status, note
+        if expert_level:
+            profile.expert_level = expert_level
         profile.reviewed_by, profile.reviewed_time = admin_id, datetime.now()
         await self.session.commit()
         await self.session.refresh(profile)

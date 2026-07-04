@@ -1,7 +1,26 @@
+/* global uni */
 // http/http.js
 
-// 动态获取环境：开发模式连接本地后端，发行模式连接线上域名
-const BASE_URL = "http://127.0.0.1:8000";
+const LOCAL_BASE_URL = "http://127.0.0.1:8000";
+const DEFAULT_BASE_URL = LOCAL_BASE_URL;
+const API_BASE_STORAGE_KEY = "api_base_url";
+
+const trimTrailingSlash = value => String(value || "").replace(/\/+$/, "");
+
+const getRuntimeBaseUrl = () => {
+  if (typeof globalThis !== "undefined" && globalThis.__AINAME_API_BASE_URL__) {
+    return globalThis.__AINAME_API_BASE_URL__;
+  }
+  return "";
+};
+
+const getBaseUrl = () => {
+  const stored = uni.getStorageSync(API_BASE_STORAGE_KEY);
+  return trimTrailingSlash(stored || getRuntimeBaseUrl() || DEFAULT_BASE_URL);
+};
+
+const uniqueValues = values => [...new Set(values.filter(Boolean))];
+const getBaseUrlCandidates = () => uniqueValues([getBaseUrl(), LOCAL_BASE_URL].map(trimTrailingSlash));
 
 /**
  * 核心请求封装函数
@@ -10,20 +29,38 @@ const request = (url, options = {}) => {
   // 每次请求前，动态获取最新的 token
   const token = uni.getStorageSync("token");
   const { silent = false, ...requestOptions } = options;
+  const requestHeaders = requestOptions.header || {};
   
   return new Promise((resolve, reject) => {
-    uni.request({
-      url: BASE_URL + url,
+    const baseUrls = getBaseUrlCandidates();
+    const send = (baseIndex = 0) => {
+      const baseUrl = baseUrls[baseIndex] || DEFAULT_BASE_URL;
+      uni.request({
+      ...requestOptions,
+      url: baseUrl + url,
       header: {
         "content-type": "application/json",
-        "authorization": token ? "Bearer " + token : ""
+        "authorization": token ? "Bearer " + token : "",
+        ...requestHeaders
       },
-      ...requestOptions,
       success: (res) => {
         // HTTP 状态码 200 代表完全成功
         if (res.statusCode === 200) {
+          if (
+            baseIndex + 1 < baseUrls.length
+            && typeof res.data === "string"
+            && res.data.toLowerCase().includes("tunnel")
+            && res.data.toLowerCase().includes("not found")
+          ) {
+            send(baseIndex + 1);
+            return;
+          }
           resolve(res.data);
         } else {
+          if (baseIndex + 1 < baseUrls.length && [404, 502, 503, 504].includes(res.statusCode)) {
+            send(baseIndex + 1);
+            return;
+          }
           // --- 核心修复：智能解析 FastAPI 的错误格式 ---
           let errorMsg = '服务器请求失败';
           
@@ -50,12 +87,18 @@ const request = (url, options = {}) => {
         }
       },
       fail: (err) => {
+        if (baseIndex + 1 < baseUrls.length) {
+          send(baseIndex + 1);
+          return;
+        }
         if (!silent) {
           uni.showToast({ title: '网络连接断开，请检查网络', icon: 'none' });
         }
         reject(err);
       }
-    });
+      });
+    };
+    send();
   });
 };
 
@@ -83,7 +126,7 @@ const uploadFile = (url, filePath) => {
   
   return new Promise((resolve, reject) => {
     uni.uploadFile({
-      url: BASE_URL + url,
+      url: getBaseUrl() + url,
       filePath: filePath,
       name: 'file',
       header: {
@@ -138,7 +181,9 @@ export default {
   createMembershipOrder: (packageId) => request('/membership/orders', { method: 'POST', data: { package_id: packageId } }),
   startMembershipAlipay: (orderId) => request(`/membership/orders/${orderId}/alipay`, { method: 'POST' }),
   payMembershipOrder: (orderId) => request(`/membership/orders/${orderId}/pay`, { method: 'PUT' }),
-  syncAlipayOrder: (outTradeNo) => request(`/payments/alipay/orders/${encodeURIComponent(outTradeNo)}/sync`, { method: 'POST' }),
+  getMyPaymentOrders: (page = 1, pageSize = 20) => request(`/payments/orders?page=${page}&page_size=${pageSize}`, { method: 'GET' }),
+  startPaymentOrderAlipay: (orderId) => request(`/payments/orders/${orderId}/alipay`, { method: 'POST' }),
+  syncAlipayOrder: (outTradeNo, options = {}) => request(`/payments/alipay/orders/${encodeURIComponent(outTradeNo)}/sync`, { method: 'POST', ...options }),
 
   // ================= 6. 灵感社区 =================
   getCommunityPosts: (page = 1, sort = 'latest', category = '') => request(`/community/posts?page=${page}&page_size=20&sort=${sort}${category ? `&category=${encodeURIComponent(category)}` : ''}`, { method: 'GET' }),
@@ -153,7 +198,12 @@ export default {
   // ================= 7. 专家市场 =================
   getExperts: (page = 1, expertType = '') => request(`/marketplace/experts?page=${page}&page_size=20${expertType ? `&expert_type=${expertType}` : ''}`, { method: 'GET' }),
   getExpert: (expertId) => request(`/marketplace/experts/${expertId}`, { method: 'GET' }),
-  getExpertPackages: (expertType = '') => request(`/marketplace/packages${expertType ? `?expert_type=${expertType}` : ''}`, { method: 'GET' }),
+  getExpertPackages: (expertType = '', expertId = null) => {
+    const query = [];
+    if (expertId) query.push(`expert_id=${expertId}`);
+    else if (expertType) query.push(`expert_type=${expertType}`);
+    return request(`/marketplace/packages${query.length ? `?${query.join('&')}` : ''}`, { method: 'GET' });
+  },
   applyExpert: (data) => request('/marketplace/expert-application', { method: 'POST', data }),
   getMyExpertProfile: () => request('/marketplace/expert-application/me', { method: 'GET', silent: true }),
   createExpertOrder: (data) => request('/marketplace/orders', { method: 'POST', data }),
@@ -184,6 +234,11 @@ export default {
     });
     return request(`/admin/finance/orders?${query.join('&')}`, { method: 'GET' });
   },
+  syncAdminOrderPayment: (orderId) => request(`/admin/finance/orders/${orderId}/sync`, { method: 'POST' }),
+  getAdminPackages: (packageScope = '') => request(`/admin/packages${packageScope ? `?package_scope=${packageScope}` : ''}`, { method: 'GET' }),
+  createAdminPackage: (data) => request('/admin/packages', { method: 'POST', data }),
+  updateAdminPackage: (packageScope, packageId, data) => request(`/admin/packages/${packageScope}/${packageId}`, { method: 'PUT', data }),
+  deleteAdminPackage: (packageScope, packageId) => request(`/admin/packages/${packageScope}/${packageId}`, { method: 'DELETE' }),
   reviewRefund: (refundId, data) => request(`/admin/finance/refunds/${refundId}`, { method: 'PUT', data }),
   getAdminAgents: () => request("/admin/ai/agents", { method: 'GET' }),
   updateAdminAgent: (agentId, data) => request(`/admin/ai/agents/${agentId}`, { method: 'PUT', data }),

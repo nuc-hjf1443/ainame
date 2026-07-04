@@ -122,6 +122,7 @@ import { computed, reactive, ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
 import http from '@/http/http.js';
 import DashboardLayout from '@/components/DashboardLayout/DashboardLayout.vue';
+import { openAlipayWindow, startAlipayPayment } from '@/utils/alipayPayment.js';
 
 const experts = ref([]);
 const packages = ref([]);
@@ -136,20 +137,17 @@ const mode = ref('asset');
 const types = [{ label: '全部专家', value: '' }, { label: '国学命名', value: 'CULTURE_MASTER' }, { label: '品牌咨询', value: 'BRAND_CONSULTANT' }];
 const categoryLabels = ['人名', '企业名', '宠物名'];
 const form = reactive({ package_id: null, naming_asset_id: null, name: '', category: '企业名', moral: '', requirements: '' });
+const PENDING_EXPERT_ALIPAY_KEY = 'pending_expert_alipay_out_trade_no';
 
 const labelType = value => value === 'CULTURE_MASTER' ? '国学命名专家' : '品牌咨询师';
-const primaryPackage = expert => packages.value.find(item => item.expert_type === expert.expert_type);
-const selectedPackages = computed(() => selectedExpert.value ? packages.value.filter(item => item.expert_type === selectedExpert.value.expert_type) : []);
+const packageMatchesExpert = (item, expert) => item.expert_type === expert.expert_type && (item.expert_level || 'STANDARD') === (expert.expert_level || 'STANDARD');
+const primaryPackage = expert => packages.value.find(item => packageMatchesExpert(item, expert));
+const selectedPackages = computed(() => selectedExpert.value ? packages.value.filter(item => packageMatchesExpert(item, selectedExpert.value)) : []);
 const assetLabels = computed(() => assets.value.map(item => `${item.name} · ${item.category}`));
 const selectedAssetLabel = computed(() => assets.value.find(item => item.id === form.naming_asset_id)?.name || '请点击选择已收藏的名字');
 const payable = item => profile.value?.is_vip ? (Number(item.price) * 0.9).toFixed(2) : Number(item.price).toFixed(2);
-const redirectToAlipay = payment => {
-  // #ifdef H5
-  window.location.href = payment.payment_url;
-  // #endif
-  // #ifndef H5
-  uni.showToast({ title: '当前仅 H5 支持支付宝沙箱支付', icon: 'none' });
-  // #endif
+const redirectToAlipay = (payment, payWindow = null) => {
+  startAlipayPayment(payment, { pendingKey: PENDING_EXPERT_ALIPAY_KEY, payWindow });
 };
 
 const load = async () => {
@@ -193,8 +191,9 @@ const createOrder = async () => {
     orderOpen.value = false;
     uni.showModal({ title: '订单已创建', content: `实付 ¥${order.amount}，是否前往支付宝沙箱支付？`, success: async result => {
       if (result.confirm) {
+        const payWindow = openAlipayWindow();
         const payment = await http.startExpertAlipay(order.id);
-        redirectToAlipay(payment);
+        redirectToAlipay(payment, payWindow);
       } else {
         uni.reLaunch({ url: '/pages/assets/index?tab=orders' });
       }
