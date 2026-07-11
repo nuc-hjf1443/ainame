@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <DashboardLayout currentMenu="profile">
   <view class="page">
     <view v-if="!token" class="login-panel">
@@ -105,8 +105,8 @@ onShow(load);
 .login-panel { text-align: center; padding: 100rpx 30rpx; }
 .login-title, .section-title { font-size: 40rpx; font-weight: 600; color: #111827; margin-bottom: 32rpx; }
 .identity-card { display: flex; align-items: center; gap: 32rpx; padding: 48rpx; border-radius: 24rpx; color: #fff; margin-bottom: 48rpx; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-.vip-card { background: linear-gradient(110deg, #1D4ED8, #6D28D9); }
-.free-card { background: #2563EB; }
+.vip-card { background: linear-gradient(110deg, #24324a, #c79a4b); }
+.free-card { background: #24324a; }
 .avatar { width: 112rpx; height: 112rpx; border-radius: 50%; background: rgba(255,255,255,.2); display: flex; align-items: center; justify-content: center; font-size: 46rpx; font-weight: 700; flex-shrink: 0; }
 .identity-main { min-width: 0; }
 .identity-line { display: flex; gap: 14rpx; align-items: center; }
@@ -115,10 +115,10 @@ onShow(load);
 .identity-email, .identity-expiry { font-size: 28rpx; margin-top: 12rpx; opacity: .9; }
 .quota-row { margin-top: 32rpx; }
 .quota-head { display: flex; justify-content: space-between; color: #4B5563; font-size: 28rpx; margin-bottom: 12rpx; }
-.quota-balance-row { display: flex; justify-content: space-between; align-items: center; margin-top: 32rpx; padding: 24rpx; border-radius: 16rpx; background: #EEF2FF; color: #1D4ED8; font-size: 28rpx; font-weight: 700; }
+.quota-balance-row { display: flex; justify-content: space-between; align-items: center; margin-top: 32rpx; padding: 24rpx; border-radius: 16rpx; background: #fffbf2; color: #9b6a20; font-size: 28rpx; font-weight: 700; }
 .progress { height: 16rpx; background: #E5E7EB; border-radius: 8rpx; overflow: hidden; }
-.progress-value { height: 100%; background: #2563EB; border-radius: 8rpx; }
-.visual-progress { background: #7C3AED; }
+.progress-value { height: 100%; background: #24324a; border-radius: 8rpx; }
+.visual-progress { background: #c79a4b; }
 .profile-row { display: flex; justify-content: space-between; gap: 30rpx; padding: 24rpx 0; border-bottom: 1px solid #E5E7EB; color: #6B7280; font-size: 28rpx; }
 .profile-row text:last-child { color: #111827; text-align: right; }
 .profile-bio { display: block; }
@@ -127,7 +127,7 @@ onShow(load);
 .muted { display: block; color: #6B7280; font-size: 24rpx; margin-top: 8rpx; }
 .asset-tabs { display: flex; gap: 16rpx; overflow-x: auto; margin: 32rpx 0; }
 .asset-tab { background: #FFFFFF; padding: 16rpx 32rpx; border-radius: 16rpx; white-space: nowrap; font-size: 28rpx; color: #4B5563; border: 1px solid #E5E7EB; }
-.asset-tab.active { background: #DBEAFE; color: #1D4ED8; border-color: #DBEAFE; font-weight: 600; }
+.asset-tab.active { background: #f5e6c9; color: #9b6a20; border-color: #f5e6c9; font-weight: 600; }
 .asset-row, .order-head { display: flex; justify-content: space-between; gap: 18rpx; align-items: center; }
 .asset-row, .order-item { padding: 24rpx 0; border-bottom: 1px solid #E5E7EB; }
 .asset-name { display: block; font-size: 32rpx; font-weight: 600; color: #111827; }
@@ -137,15 +137,15 @@ onShow(load);
 .actions { display: flex; gap: 16rpx; margin-top: 20rpx; }
 .actions button { margin: 0; border-radius: 12rpx; font-size: 24rpx; }
 .report { background: #F9FAFB; padding: 24rpx; margin-top: 16rpx; border-radius: 12rpx; font-size: 28rpx; color: #4B5563; }
-.teal { color: #2563EB; font-size: 28rpx; }
+.teal { color: #24324a; font-size: 28rpx; }
 .outline { background: #FFFFFF; color: #4B5563; border: 1px solid #D1D5DB; }
-.primary, .workbench-btn { background: #2563EB; color: #fff; border-radius: 16rpx; margin-top: 32rpx; font-size: 32rpx; font-weight: 500; }
-.admin-btn { background: #1D4ED8; color: #fff; border-radius: 16rpx; margin-top: 24rpx; font-weight: 500; }
+.primary, .workbench-btn { background: #24324a; color: #fff; border-radius: 16rpx; margin-top: 32rpx; font-size: 32rpx; font-weight: 500; }
+.admin-btn { background: #9b6a20; color: #fff; border-radius: 16rpx; margin-top: 24rpx; font-weight: 500; }
 .logout-btn { background: #FFFFFF; color: #EF4444; border: 1px solid #FEE2E2; border-radius: 16rpx; margin-top: 24rpx; height: 96rpx; line-height: 96rpx; font-size: 32rpx; font-weight: 500; }
 .reject-note { background: #FEE2E2; color: #EF4444; padding: 24rpx; margin-bottom: 24rpx; border-radius: 12rpx; font-size: 28rpx; }
 .expert-status-card { background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 16rpx; padding: 28rpx; }
 .status-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 24rpx; }
-.status-pill { padding: 8rpx 18rpx; border-radius: 999px; font-size: 24rpx; color: #2563EB; background: #DBEAFE; white-space: nowrap; }
+.status-pill { padding: 8rpx 18rpx; border-radius: 999px; font-size: 24rpx; color: #24324a; background: #f5e6c9; white-space: nowrap; }
 .status-pill.APPROVED { color: #059669; background: #D1FAE5; }
 .status-pill.REJECTED, .status-pill.SUSPENDED { color: #DC2626; background: #FEE2E2; }
 .review-note { background: #FFF7ED; color: #C2410C; padding: 20rpx; border-radius: 12rpx; margin-top: 22rpx; font-size: 26rpx; }
@@ -161,3 +161,4 @@ onShow(load);
 .empty { text-align: center; padding: 80rpx; color: #9CA3AF; grid-column: 1/-1; font-size: 28rpx; }
 @media(min-width: 900px){ .page{max-width: 900px; margin: 0 auto;} .visual-grid{grid-template-columns: repeat(3, 1fr);} }
 </style>
+

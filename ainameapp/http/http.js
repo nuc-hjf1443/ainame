@@ -4,6 +4,7 @@
 const LOCAL_BASE_URL = "http://127.0.0.1:8000";
 const DEFAULT_BASE_URL = LOCAL_BASE_URL;
 const API_BASE_STORAGE_KEY = "api_base_url";
+let activeBaseUrl = "";
 
 const trimTrailingSlash = value => String(value || "").replace(/\/+$/, "");
 
@@ -21,6 +22,16 @@ const getBaseUrl = () => {
 
 const uniqueValues = values => [...new Set(values.filter(Boolean))];
 const getBaseUrlCandidates = () => uniqueValues([getBaseUrl(), LOCAL_BASE_URL].map(trimTrailingSlash));
+const normalizeAssetUrl = url => {
+  const value = String(url || "");
+  if (!value) return "";
+  const marker = "/uploads/";
+  const markerIndex = value.indexOf(marker);
+  if (markerIndex >= 0) {
+    return (activeBaseUrl || getBaseUrl()) + value.slice(markerIndex);
+  }
+  return value;
+};
 
 /**
  * 核心请求封装函数
@@ -55,6 +66,7 @@ const request = (url, options = {}) => {
             send(baseIndex + 1);
             return;
           }
+          activeBaseUrl = baseUrl;
           resolve(res.data);
         } else {
           if (baseIndex + 1 < baseUrls.length && [404, 502, 503, 504].includes(res.statusCode)) {
@@ -148,6 +160,49 @@ const uploadFile = (url, filePath) => {
   });
 };
 
+const downloadFile = (url) => {
+  const token = String(uni.getStorageSync("token") || '').trim();
+
+  if (!token) {
+    return Promise.reject({
+      statusCode: 401,
+      data: { detail: '请先登录后再下载文件' }
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const baseUrls = getBaseUrlCandidates();
+    const send = (baseIndex = 0) => {
+      const baseUrl = baseUrls[baseIndex] || DEFAULT_BASE_URL;
+      uni.downloadFile({
+        url: baseUrl + url,
+        header: {
+          "Authorization": "Bearer " + token
+        },
+        success: (res) => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(res.tempFilePath);
+            return;
+          }
+          if (baseIndex + 1 < baseUrls.length && [404, 502, 503, 504].includes(res.statusCode)) {
+            send(baseIndex + 1);
+            return;
+          }
+          reject(res);
+        },
+        fail: (err) => {
+          if (baseIndex + 1 < baseUrls.length) {
+            send(baseIndex + 1);
+            return;
+          }
+          reject(err);
+        }
+      });
+    };
+    send();
+  });
+};
+
 // 导出所有后端接口
 export default {
   // ================= 1. 账号鉴权接口 =================
@@ -168,12 +223,15 @@ export default {
   createBrandKit: (data) => request('/visual/kits', { method: 'POST', data }),
   getBrandKits: (page = 1, pageSize = 20) => request(`/visual/kits?page=${page}&page_size=${pageSize}`, { method: 'GET' }),
   getBrandKit: (kitId) => request(`/visual/kits/${kitId}`, { method: 'GET' }),
+  regenerateBrandKitAsset: (kitId, assetId, data) => request(`/visual/kits/${kitId}/assets/${assetId}/regenerate`, { method: 'POST', data }),
   deleteBrandKit: (kitId) => request(`/visual/kits/${kitId}`, { method: 'DELETE' }),
+  normalizeAssetUrl,
 
   // ================= 5. 个人数字资产 =================
   saveNameAsset: (data) => request('/me/assets/names', { method: 'POST', data }),
   getNameAssets: (page = 1, pageSize = 20) => request(`/me/assets/names?page=${page}&page_size=${pageSize}`, { method: 'GET' }),
   deleteNameAsset: (assetId) => request(`/me/assets/names/${assetId}`, { method: 'DELETE' }),
+  downloadNameReport: (assetId) => downloadFile(`/me/assets/names/${assetId}/report`),
   getVisualAssets: (page = 1, pageSize = 20) => request(`/me/assets/visuals?page=${page}&page_size=${pageSize}`, { method: 'GET' }),
   getMyProfile: () => request('/me/profile', { method: 'GET' }),
   updateMyProfile: (data) => request('/me/profile', { method: 'PUT', data }),
@@ -206,8 +264,17 @@ export default {
   },
   applyExpert: (data) => request('/marketplace/expert-application', { method: 'POST', data }),
   getMyExpertProfile: () => request('/marketplace/expert-application/me', { method: 'GET', silent: true }),
+  createExpertChatThread: (data) => request('/marketplace/chat/threads', { method: 'POST', data }),
+  getMyExpertChatThreads: (page = 1, pageSize = 20) => request(`/marketplace/chat/threads?page=${page}&page_size=${pageSize}`, { method: 'GET' }),
+  getExpertChatThreads: (page = 1, pageSize = 20) => request(`/marketplace/expert/chat/threads?page=${page}&page_size=${pageSize}`, { method: 'GET' }),
+  getExpertChatThread: (threadId) => request(`/marketplace/chat/threads/${threadId}`, { method: 'GET' }),
+  getExpertChatMessages: (threadId, page = 1, pageSize = 50) => request(`/marketplace/chat/threads/${threadId}/messages?page=${page}&page_size=${pageSize}`, { method: 'GET' }),
+  sendExpertChatMessage: (threadId, content) => request(`/marketplace/chat/threads/${threadId}/messages`, { method: 'POST', data: { content } }),
+  uploadExpertChatAttachment: (threadId, filePath) => uploadFile(`/marketplace/chat/threads/${threadId}/attachments`, filePath),
+  markExpertChatRead: (threadId) => request(`/marketplace/chat/threads/${threadId}/read`, { method: 'PUT' }),
   createExpertOrder: (data) => request('/marketplace/orders', { method: 'POST', data }),
   getMyExpertOrders: (page = 1) => request(`/marketplace/orders?page=${page}&page_size=20`, { method: 'GET' }),
+  getExpertOrder: (orderId) => request(`/marketplace/orders/${orderId}`, { method: 'GET' }),
   startExpertAlipay: (orderId) => request(`/marketplace/orders/${orderId}/alipay`, { method: 'POST' }),
   payExpertOrder: (orderId) => request(`/marketplace/orders/${orderId}/pay`, { method: 'PUT' }),
   cancelExpertOrder: (orderId) => request(`/marketplace/orders/${orderId}/cancel`, { method: 'PUT' }),
@@ -219,6 +286,10 @@ export default {
   generateReportDraft: (orderId) => request(`/marketplace/expert/orders/${orderId}/report/draft`, { method: 'POST' }),
   saveExpertReport: (orderId, data) => request(`/marketplace/expert/orders/${orderId}/report`, { method: 'PUT', data }),
   submitExpertReport: (orderId, data) => request(`/marketplace/expert/orders/${orderId}/report/submit`, { method: 'PUT', data }),
+  getExpertWallet: () => request('/marketplace/expert/wallet', { method: 'GET' }),
+  getExpertWalletTransactions: (page = 1, pageSize = 20) => request(`/marketplace/expert/wallet/transactions?page=${page}&page_size=${pageSize}`, { method: 'GET' }),
+  createExpertWithdrawal: (data) => request('/marketplace/expert/withdrawals', { method: 'POST', data }),
+  getExpertWithdrawals: (page = 1, pageSize = 20) => request(`/marketplace/expert/withdrawals?page=${page}&page_size=${pageSize}`, { method: 'GET' }),
 
   // ================= 8. 管理员后台接口 =================
   getAdminUsers: (page = 1, pageSize = 20, keyword = '') => request(`/admin/users?page=${page}&page_size=${pageSize}${keyword ? `&keyword=${encodeURIComponent(keyword)}` : ''}`, { method: 'GET' }),
@@ -250,6 +321,8 @@ export default {
   createAdminServicePackage: (data) => request('/admin/marketplace/packages', { method: 'POST', data }),
   updateAdminServicePackage: (packageId, data) => request(`/admin/marketplace/packages/${packageId}`, { method: 'PUT', data }),
   deleteAdminServicePackage: (packageId) => request(`/admin/marketplace/packages/${packageId}`, { method: 'DELETE' }),
+  getAdminWithdrawals: (status = '') => request(`/admin/marketplace/withdrawals?page=1&page_size=100${status ? `&status=${status}` : ''}`, { method: 'GET' }),
+  reviewAdminWithdrawal: (withdrawalId, data) => request(`/admin/marketplace/withdrawals/${withdrawalId}`, { method: 'PUT', data }),
   getAdminCommunityReports: (status = 'PENDING') => request(`/admin/marketplace/reports?page=1&page_size=100&status=${status}`, { method: 'GET' }),
   moderateAdminReport: (reportId, data) => request(`/admin/marketplace/reports/${reportId}`, { method: 'PUT', data })
 };

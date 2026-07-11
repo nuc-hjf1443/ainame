@@ -54,9 +54,14 @@ class AppSettings(BaseSettings):
     AIGC_FETCH_PATH_TEMPLATE: str = "/task/{task_id}"
     AIGC_TIMEOUT_SECONDS: int = 10
     AIGC_WAN_IMAGE_URL: str = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+    AIGC_IMAGE_SYNTHESIS_URL: str = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis"
+    AIGC_TASK_URL_TEMPLATE: str = "https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}"
     AIGC_GENERATION_TIMEOUT_SECONDS: int = 180
+    AIGC_NETWORK_RETRY_ATTEMPTS: int = 3
     PUBLIC_BASE_URL: str = "http://127.0.0.1:8000"
     VISUAL_MAX_FILE_SIZE: int = 10 * 1024 * 1024
+    PDF_FONT_PATH: str = ""
+    PDF_FONT_BOLD_PATH: str = ""
 
 
 _settings = AppSettings()
@@ -122,6 +127,11 @@ AIGC_SUBMIT_PATH = _settings.AIGC_SUBMIT_PATH
 AIGC_FETCH_PATH_TEMPLATE = _settings.AIGC_FETCH_PATH_TEMPLATE
 AIGC_TIMEOUT_SECONDS = _settings.AIGC_TIMEOUT_SECONDS
 AIGC_WAN_IMAGE_URL = _settings.AIGC_WAN_IMAGE_URL
+AIGC_IMAGE_SYNTHESIS_URL = _settings.AIGC_IMAGE_SYNTHESIS_URL
+AIGC_TASK_URL_TEMPLATE = _settings.AIGC_TASK_URL_TEMPLATE
 AIGC_GENERATION_TIMEOUT_SECONDS = _settings.AIGC_GENERATION_TIMEOUT_SECONDS
+AIGC_NETWORK_RETRY_ATTEMPTS = max(1, _settings.AIGC_NETWORK_RETRY_ATTEMPTS)
 PUBLIC_BASE_URL = _settings.PUBLIC_BASE_URL.rstrip("/")
 VISUAL_MAX_FILE_SIZE = _settings.VISUAL_MAX_FILE_SIZE
+PDF_FONT_PATH = _resolve_path(_settings.PDF_FONT_PATH)
+PDF_FONT_BOLD_PATH = _resolve_path(_settings.PDF_FONT_BOLD_PATH)

@@ -69,6 +69,23 @@
       </view>
       <view v-if="!reports.length" class="empty">暂无待处理举报</view>
     </view>
+
+    <view v-if="tab === 'withdrawals'">
+      <view class="filters">
+        <view v-for="item in withdrawalFilters" :key="item.value" :class="['tab', withdrawalStatus === item.value ? 'active' : '']" @click="changeWithdrawalStatus(item.value)">{{ item.label }}</view>
+      </view>
+      <view v-for="item in withdrawals" :key="item.id" class="card">
+        <view class="head"><text class="name">提现 #{{ item.id }}</text><text>{{ withdrawalStatusText(item.status) }}</text></view>
+        <view class="copy">专家 #{{ item.expert_id }} · ¥{{ item.amount }} · {{ item.real_name }}</view>
+        <view class="info-block"><text>支付宝账号</text><view>{{ item.alipay_account }}</view></view>
+        <view v-if="item.review_note" class="review-note">审核备注：{{ item.review_note }}</view>
+        <view v-if="item.status === 'PENDING'" class="actions">
+          <button size="mini" @click="reviewWithdrawal(item, 'APPROVED')">通过</button>
+          <button size="mini" class="danger" @click="reviewWithdrawal(item, 'REJECTED')">驳回</button>
+        </view>
+      </view>
+      <view v-if="!withdrawals.length" class="empty">暂无提现申请</view>
+    </view>
   </view>
 </template>
 
@@ -81,8 +98,11 @@ const tab = ref('experts');
 const experts = ref([]);
 const packages = ref([]);
 const reports = ref([]);
+const withdrawals = ref([]);
+const withdrawalStatus = ref('PENDING');
 const packageSaving = ref(false);
-const tabs = [{label:'专家审核',value:'experts'},{label:'服务套餐',value:'packages'},{label:'社区举报',value:'reports'}];
+const tabs = [{label:'专家审核',value:'experts'},{label:'服务套餐',value:'packages'},{label:'社区举报',value:'reports'},{label:'提现审核',value:'withdrawals'}];
+const withdrawalFilters = [{label:'待审核',value:'PENDING'},{label:'已通过',value:'APPROVED'},{label:'已驳回',value:'REJECTED'},{label:'全部',value:''}];
 const types = ['CULTURE_MASTER', 'BRAND_CONSULTANT'];
 const typeLabels = ['国学命名', '品牌咨询'];
 const pkg = reactive({name:'',expert_type:'CULTURE_MASTER',price:'',delivery_days:'3',description:'',status:'ACTIVE'});
@@ -96,6 +116,11 @@ const statusText = value => ({
   REJECTED: '已拒绝',
   SUSPENDED: '已停用'
 }[value] || value || '-');
+const withdrawalStatusText = value => ({
+  PENDING: '待审核',
+  APPROVED: '已通过',
+  REJECTED: '已驳回'
+}[value] || value || '-');
 
 const updateField = (field, value) => { pkg[field] = value; };
 const changeExpertType = event => { pkg.expert_type = types[Number(event.detail.value)]; };
@@ -105,6 +130,7 @@ const load = async () => {
     await http.getAdminServicePackages(),
     (await http.getAdminCommunityReports()).items
   ];
+  withdrawals.value = (await http.getAdminWithdrawals(withdrawalStatus.value)).items || [];
 };
 const review = async (item, status) => {
   if (item.status === status) return;
@@ -151,9 +177,26 @@ const deletePackage = item => uni.showModal({
   }
 });
 const moderate = async (id, action) => { await http.moderateAdminReport(id, {action,resolution:action==='HIDE'?'内容已隐藏':'举报不成立'}); reports.value = (await http.getAdminCommunityReports()).items; };
+const changeWithdrawalStatus = async value => {
+  withdrawalStatus.value = value;
+  withdrawals.value = (await http.getAdminWithdrawals(withdrawalStatus.value)).items || [];
+};
+const reviewWithdrawal = (item, status) => uni.showModal({
+  title: status === 'APPROVED' ? '通过提现申请' : '驳回提现申请',
+  content: status === 'APPROVED' ? `确认已线下向 ${item.real_name} 支付 ¥${item.amount}？` : '',
+  editable: status === 'REJECTED',
+  placeholderText: '填写驳回原因',
+  success: async result => {
+    if (!result.confirm) return;
+    const note = String(result.content || '').trim();
+    if (status === 'REJECTED' && !note) return uni.showToast({title:'请填写驳回原因',icon:'none'});
+    await http.reviewAdminWithdrawal(item.id, {status, review_note: note || null});
+    withdrawals.value = (await http.getAdminWithdrawals(withdrawalStatus.value)).items || [];
+  }
+});
 onLoad(load);
 </script>
 
 <style scoped>
-.page{padding:28rpx;background:#f5f7f6;min-height:100vh;box-sizing:border-box}.tabs{display:flex;gap:10rpx;margin-bottom:24rpx}.tab{padding:14rpx 22rpx;background:#fff;border-radius:8rpx}.tab.active{background:#1e293b;color:#fff}.card,.form{background:#fff;border:1px solid #e2e8f0;border-radius:8rpx;padding:22rpx;margin-bottom:16rpx}.head{display:flex;justify-content:space-between}.name,.form-title{font-weight:700;font-size:30rpx}.form-title{margin-bottom:24rpx}.copy{color:#64748b;font-size:24rpx;margin:12rpx 0}.info-block{background:#f8fafc;border:1px solid #eef2f7;border-radius:8rpx;padding:16rpx;margin-top:12rpx}.info-block text{display:block;color:#64748b;font-size:23rpx;margin-bottom:8rpx}.info-block view{font-size:25rpx;line-height:1.6}.review-note{background:#fff7ed;color:#c2410c;border-radius:8rpx;padding:14rpx;margin-top:12rpx;font-size:24rpx}.actions{display:flex;gap:10rpx;margin-top:16rpx}.actions button{margin:0}.danger{background:#fff;color:#dc2626}.outline{background:#fff;color:#475569}.field-label{font-size:24rpx;color:#475569;margin:16rpx 0 8rpx}.form-input,.form-textarea{width:100%;box-sizing:border-box;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8rpx;font-size:28rpx}.form-input{height:84rpx;padding:0 18rpx}.picker-value{display:flex;align-items:center}.form-textarea{height:140rpx;padding:18rpx}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16rpx}.primary{background:#1e293b;color:#fff;margin-top:20rpx}.empty{text-align:center;padding:80rpx;color:#94a3b8}@media(max-width:600px){.form-grid{grid-template-columns:1fr}}
+.page{padding:28rpx;background:#f5f7f6;min-height:100vh;box-sizing:border-box}.tabs,.filters{display:flex;gap:10rpx;margin-bottom:24rpx;overflow-x:auto}.tab{padding:14rpx 22rpx;background:#fff;border-radius:8rpx;white-space:nowrap}.tab.active{background:#1e293b;color:#fff}.card,.form{background:#fff;border:1px solid #e2e8f0;border-radius:8rpx;padding:22rpx;margin-bottom:16rpx}.head{display:flex;justify-content:space-between}.name,.form-title{font-weight:700;font-size:30rpx}.form-title{margin-bottom:24rpx}.copy{color:#64748b;font-size:24rpx;margin:12rpx 0}.info-block{background:#f8fafc;border:1px solid #eef2f7;border-radius:8rpx;padding:16rpx;margin-top:12rpx}.info-block text{display:block;color:#64748b;font-size:23rpx;margin-bottom:8rpx}.info-block view{font-size:25rpx;line-height:1.6}.review-note{background:#fff7ed;color:#c2410c;border-radius:8rpx;padding:14rpx;margin-top:12rpx;font-size:24rpx}.actions{display:flex;gap:10rpx;margin-top:16rpx}.actions button{margin:0}.danger{background:#fff;color:#dc2626}.outline{background:#fff;color:#475569}.field-label{font-size:24rpx;color:#475569;margin:16rpx 0 8rpx}.form-input,.form-textarea{width:100%;box-sizing:border-box;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8rpx;font-size:28rpx}.form-input{height:84rpx;padding:0 18rpx}.picker-value{display:flex;align-items:center}.form-textarea{height:140rpx;padding:18rpx}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16rpx}.primary{background:#1e293b;color:#fff;margin-top:20rpx}.empty{text-align:center;padding:80rpx;color:#94a3b8}@media(max-width:600px){.form-grid{grid-template-columns:1fr}}
 </style>

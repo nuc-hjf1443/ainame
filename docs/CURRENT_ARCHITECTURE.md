@@ -262,3 +262,189 @@ expert_service_orders
 - 新增 ORM 表、基础设施或主要路由后，应同步更新对应章节。
 - 数据库结构发生变化时，以 Alembic 迁移为准，并同步更新表数量和关系说明。
 - 文档不得记录数据库 URI、密码、API Key、Token、证书或真实用户数据。
+## 11. 当前有效架构与接口功能说明
+
+> 更新时间：2026-07-10
+>
+> 说明：本节为当前有效内容，基于现有代码和最近完成的功能整理。由于原文档前半部分存在编码乱码，本节作为最新架构快照追加在文档末尾，后续可逐步清理旧内容。
+
+## 0. 当前有效架构快照
+
+### 0.1 项目边界
+
+- 前端位于 `ainameapp/`，使用 uni-app + Vue 3，主要通过 `ainameapp/http/http.js` 访问后端接口。
+- 后端位于 `ainamebackend/`，使用 FastAPI + SQLAlchemy async + Alembic。
+- 业务数据库当前按代码配置使用 MySQL，测试环境使用 SQLite 内存库。
+- AI 命名流程使用 LangGraph + DeepSeek，并通过 PostgreSQL checkpoint 保存对话记忆。
+- RAG 上传使用 RabbitMQ + `rag_worker.py`，向量库使用 ChromaDB。
+- 品牌视觉生成使用 FastAPI `BackgroundTasks` 执行异步生成。
+- 支付主链路为支付宝沙箱，保留显式开关控制的 mock 支付测试入口。
+
+### 0.2 当前已实现核心模块
+
+| 模块 | 当前能力 | 主要前端入口 |
+| --- | --- | --- |
+| 账号与用户中心 | 注册、登录、JWT 鉴权、个人资料、封禁、软删除、管理员权限校验 | 登录页、注册页、个人中心、后台用户管理 |
+| AI 起名 | 人名、企业名、宠物名生成；企业名域名检测；基于 `thread_id` 反馈迭代 | 首页起名工作台 |
+| 私有知识库 RAG | TXT/PDF 上传、RabbitMQ 异步解析、ChromaDB 入库、起名时检索上下文 | 首页知识库上传 |
+| 资产中心 | 保存命名资产、查看品牌方案、查看专家订单、导出命名 PDF 报告 | `pages/assets/index.vue` |
+| 命名 PDF 报告 | 使用 ReportLab 生成 PDF，包含最终选名、寓意出处、域名建议、Slogan、Logo 概念和风险提示 | 资产中心“导出报告” |
+| 品牌视觉与品牌方案 | 基于命名资产生成品牌方案、Logo、名片，支持状态轮询和失败退配额 | 品牌工作台、资产中心 |
+| 会员、配额与支付 | VIP/次数包、配额预扣与退还、支付宝沙箱支付、主动同步、退款审核 | 充值中心、订单中心、后台财务 |
+| 灵感社区 | 发布候选名投票帖、投票、评论、举报、后台治理 | 社区首页、详情页、发布页 |
+| 专家服务市场 | 专家申请、专家审核、服务套餐、专家下单、接单、报告交付、评价、退款 | 专家市场、资产中心、专家工作台 |
+| 专家聊天 | 用户可从专家套餐服务进入聊天，售前咨询和下单后沟通复用同一会话 | 专家市场、资产中心、专家工作台 |
+| 专家钱包与提现 | 订单完成后结算专家收入；专家可查看钱包、流水并提交提现；后台人工审核提现 | 专家工作台、后台市场管理 |
+| 管理后台 | 用户、套餐、财务订单、退款、专家审核、专家套餐、社区举报、提现审核、AI 配置、知识库元数据、敏感词审计 | 后台管理页 |
+
+### 0.3 当前接口模块
+
+| 路由前缀 | 当前能力 |
+| --- | --- |
+| `/auth` | 邮箱验证码、注册、登录 |
+| `/names` | 起名生成、携带 `thread_id` 的反馈迭代 |
+| `/knowledge` | RAG 文件上传 |
+| `/visual` | 独立视觉生成、品牌方案创建、品牌方案查询、品牌素材状态刷新 |
+| `/me/assets` | 命名资产创建、列表、删除；视觉资产列表；命名报告 PDF 下载 |
+| `/me/profile` | 个人资料、会员状态、配额、专家状态聚合查询与更新 |
+| `/membership` | 套餐列表、会员/次数包订单、支付宝支付、mock 支付 |
+| `/payments` | 支付订单列表、支付宝支付、notify、return、主动同步 |
+| `/community` | 帖子、候选名、投票、评论、举报 |
+| `/marketplace` | 专家列表、套餐、专家申请、专家订单、专家报告、评价、聊天、钱包、提现 |
+| `/admin` | 用户、套餐、财务、退款、AI 配置、知识库、审计 |
+| `/admin/marketplace` | 专家审核、专家服务包、社区举报、专家提现审核 |
+
+当前接口尚未统一加 `/api/v1` 版本前缀。
+
+### 0.4 重点接口清单
+
+#### 命名报告 PDF
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/me/assets/names/{asset_id}/report` | 下载当前用户命名资产的 PDF 报告 |
+
+报告生成逻辑位于 `ainamebackend/services/name_report_service.py`，路由位于 `ainamebackend/routers/asset_router.py`，前端封装为 `downloadNameReport(assetId)`。
+
+#### 专家聊天
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/marketplace/chat/threads` | 用户基于专家和套餐创建或复用售前会话 |
+| `GET` | `/marketplace/chat/threads` | 用户查看自己的专家聊天会话 |
+| `GET` | `/marketplace/expert/chat/threads` | 专家查看客户咨询会话 |
+| `GET` | `/marketplace/chat/threads/{thread_id}/messages` | 查看会话消息 |
+| `POST` | `/marketplace/chat/threads/{thread_id}/messages` | 发送文本消息 |
+| `PUT` | `/marketplace/chat/threads/{thread_id}/read` | 标记会话已读 |
+
+聊天当前为文本消息，前端通过 REST 轮询刷新，暂未使用 WebSocket。
+
+#### 专家订单与聊天绑定
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/marketplace/orders` | 创建专家订单，支持可选 `chat_thread_id` 绑定会话 |
+| `GET` | `/marketplace/orders` | 用户查看自己的专家订单 |
+| `PUT` | `/marketplace/orders/{order_id}/pay` | mock 支付专家订单，需显式开启 mock 支付 |
+| `POST` | `/marketplace/orders/{order_id}/alipay` | 发起专家订单支付宝沙箱支付 |
+| `PUT` | `/marketplace/orders/{order_id}/cancel` | 用户取消专家订单 |
+| `PUT` | `/marketplace/orders/{order_id}/complete` | 用户确认完成，触发专家钱包结算 |
+| `POST` | `/marketplace/orders/{order_id}/review` | 用户评价专家服务 |
+| `GET` | `/marketplace/expert/orders` | 专家查看工作台订单 |
+| `PUT` | `/marketplace/expert/orders/{order_id}/accept` | 专家接单 |
+| `PUT` | `/marketplace/expert/orders/{order_id}/reject` | 专家拒单 |
+| `POST` | `/marketplace/expert/orders/{order_id}/report/draft` | 生成专家报告 AI 草稿 |
+| `PUT` | `/marketplace/expert/orders/{order_id}/report` | 保存专家报告 |
+| `PUT` | `/marketplace/expert/orders/{order_id}/report/submit` | 提交专家报告并交付 |
+
+结算规则：只有用户确认订单 `COMPLETED` 后，专家收入才进入可提现余额。
+
+#### 专家钱包与提现
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/marketplace/expert/wallet` | 专家查看钱包余额 |
+| `GET` | `/marketplace/expert/wallet/transactions` | 专家查看钱包流水 |
+| `POST` | `/marketplace/expert/withdrawals` | 专家提交提现申请 |
+| `GET` | `/marketplace/expert/withdrawals` | 专家查看提现记录 |
+| `GET` | `/admin/marketplace/withdrawals` | 管理员查看提现申请，可按状态筛选 |
+| `PUT` | `/admin/marketplace/withdrawals/{withdrawal_id}` | 管理员通过或驳回提现 |
+
+提现当前是人工审核与线下支付宝打款流程，不包含自动转账。
+
+### 0.5 当前主要数据表
+
+当前 ORM 已覆盖以下业务表，实际生产库以 Alembic 迁移执行结果为准。
+
+| 业务域 | 表 |
+| --- | --- |
+| 用户与认证 | `user`, `email_code` |
+| AI 配置与知识库 | `agent_config`, `knowledge_base` |
+| 命名资产 | `naming_assets` |
+| 品牌视觉 | `brand_kits`, `brand_visuals` |
+| 社区 | `community_posts`, `community_candidates`, `community_votes`, `community_comments`, `community_reports` |
+| 支付、会员与配额 | `package_config`, `orders`, `refund_audit`, `api_bill`, `user_memberships`, `user_quota_balances`, `daily_quota_usage` |
+| 专家服务 | `expert_profiles`, `expert_service_packages`, `expert_service_orders`, `expert_reports`, `expert_reviews` |
+| 专家聊天 | `expert_chat_threads`, `expert_chat_messages` |
+| 专家钱包与提现 | `expert_wallets`, `expert_wallet_transactions`, `expert_withdrawals` |
+| 风控与审计 | `sensitive_word_interception`, `ai_content_patrol` |
+
+### 0.6 专家聊天、钱包与提现数据关系
+
+```text
+user(customer)
+  -> expert_chat_threads.customer_id
+  -> expert_chat_messages.sender_user_id
+  -> expert_service_orders.customer_id
+
+expert_profiles
+  -> expert_chat_threads.expert_id
+  -> expert_service_orders.expert_id
+  -> expert_wallets.expert_id
+  -> expert_withdrawals.expert_id
+  -> expert_wallet_transactions.expert_id
+
+expert_chat_threads
+  -> expert_chat_messages
+  -> expert_service_orders(service_order_id, optional)
+
+expert_service_orders(COMPLETED)
+  -> expert_wallet_transactions(ORDER_SETTLEMENT)
+  -> expert_wallets.available_balance
+
+expert_withdrawals
+  -> expert_wallet_transactions(WITHDRAW_REQUEST / WITHDRAW_APPROVED / WITHDRAW_REJECTED)
+```
+
+### 0.7 当前 Alembic 迁移状态
+
+- 专家聊天、钱包、提现功能新增迁移：`a7b8c9d0e1f2_add_expert_chat_wallet.py`。
+- 当前迁移链检查结果为单 head：`a7b8c9d0e1f2`。
+- PDF 报告功能不新增数据表，仅新增 ReportLab 运行依赖和下载接口。
+
+### 0.8 当前验证状态
+
+最近一次后端验证结果：
+
+```text
+python -m compileall ainamebackend\models ainamebackend\schemas ainamebackend\repository ainamebackend\routers ainamebackend\services ainamebackend\main.py
+python -m pytest ainamebackend\tests
+python -m alembic heads
+```
+
+结果：
+
+- 后端编译通过。
+- 后端测试：`47 passed`。
+- Alembic：单 head `a7b8c9d0e1f2`。
+
+### 0.9 当前工程约束
+
+- 前端当前未配置独立 `package.json`，主要按 HBuilderX/uni-app 工程方式构建。
+- 专家聊天当前为 REST 轮询，不支持 WebSocket、图片或附件消息。
+- 专家提现当前为人工审核和线下打款，不支持自动转账。
+- 命名 PDF 报告基于已保存命名资产生成，报告内容质量依赖资产字段完整度。
+- 视觉生成仍依赖 FastAPI 进程内 `BackgroundTasks`，没有独立视觉 worker。
+- RAG、Redis、RabbitMQ、PostgreSQL checkpoint、MySQL、支付宝沙箱等外部依赖需要按环境分别配置。
+
+---

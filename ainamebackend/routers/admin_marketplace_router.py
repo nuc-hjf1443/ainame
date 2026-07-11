@@ -6,7 +6,11 @@ from models.user import User
 from repository.community_repo import CommunityRepository
 from repository.marketplace_repo import MarketplaceRepository
 from repository.membership_repo import MembershipRepository
-from schemas.marketplace_schemas import CommunityModerationIn, ExpertOut, ExpertPageOut, ExpertReviewDecisionIn, ServicePackageIn, ServicePackageOut, ServicePackageUpdateIn
+from schemas.marketplace_schemas import (
+    CommunityModerationIn, ExpertOut, ExpertPageOut, ExpertReviewDecisionIn,
+    ServicePackageIn, ServicePackageOut, ServicePackageUpdateIn,
+    WithdrawalOut, WithdrawalPageOut, WithdrawalReviewIn,
+)
 
 
 router = APIRouter(prefix="/admin/marketplace", tags=["admin-marketplace"], dependencies=[Depends(require_admin)])
@@ -62,6 +66,35 @@ async def delete_package(package_id: int, session: AsyncSession = Depends(get_se
     if result is False:
         raise HTTPException(409, detail="服务套餐已有订单引用，不能删除，请下架")
     return {"id": package_id, "deleted": True}
+
+
+@router.get("/withdrawals", response_model=WithdrawalPageOut)
+async def admin_withdrawals(
+        page: int = Query(1, ge=1),
+        page_size: int = Query(20, ge=1, le=100),
+        status: str | None = None,
+        session: AsyncSession = Depends(get_session),
+):
+    items, total = await MarketplaceRepository(session).list_withdrawals(None, page, page_size, status)
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.put("/withdrawals/{withdrawal_id}", response_model=WithdrawalOut)
+async def review_withdrawal(
+        withdrawal_id: int,
+        data: WithdrawalReviewIn,
+        admin: User = Depends(require_admin),
+        session: AsyncSession = Depends(get_session),
+):
+    withdrawal = await MarketplaceRepository(session).review_withdrawal(
+        withdrawal_id,
+        admin.id,
+        data.status,
+        data.review_note,
+    )
+    if not withdrawal:
+        raise HTTPException(404, detail="提现申请不存在或状态异常")
+    return withdrawal
 
 
 @router.get("/reports")

@@ -15,26 +15,26 @@
 /* 颜色变量 */
 
 /* 行为相关颜色 */
-$uni-color-primary: #4F46E5;
+$uni-color-primary: #24324A;
 $uni-color-success: #4cd964;
 $uni-color-warning: #f0ad4e;
 $uni-color-error: #dd524d;
 
 /* 文字基本颜色 */
-$uni-text-color: #111827; //基本色
+$uni-text-color: #17243B; //基本色
 $uni-text-color-inverse: #ffffff; //反色
-$uni-text-color-grey: #6B7280; //辅助灰色，如加载更多的提示信息
-$uni-text-color-placeholder: #9CA3AF;
-$uni-text-color-disable: #D1D5DB;
+$uni-text-color-grey: #667085; //辅助灰色，如加载更多的提示信息
+$uni-text-color-placeholder: #A3A9B5;
+$uni-text-color-disable: #D8DDE6;
 
 /* 背景颜色 */
 $uni-bg-color: #ffffff;
-$uni-bg-color-grey: #F9FAFB;
-$uni-bg-color-hover: #F3F4F6; //点击状态颜色
+$uni-bg-color-grey: #F7F4EE;
+$uni-bg-color-hover: #F4F6F8; //点击状态颜色
 $uni-bg-color-mask: rgba(0, 0, 0, 0.4); //遮罩颜色
 
 /* 边框颜色 */
-$uni-border-color: #E5E7EB;
+$uni-border-color: #E7E0D4;
 
 /* 尺寸变量 */
 
@@ -76,21 +76,24 @@ $uni-color-paragraph: #3F536E; // 文章段落颜色
 $uni-font-size-paragraph:15px;
 
 /* --- Dashboard Custom Design Tokens --- */
-$font-family-base: 'Inter', system-ui, -apple-system, sans-serif;
+$font-family-base: 'Inter', 'Noto Serif SC', 'Songti SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
 
-$brand-primary: #4F46E5; /* 鲜艳的亮蓝色/紫蓝色 */
-$brand-primary-hover: #4338CA;
-$brand-secondary: #EEF2FF; /* 辅助底色 */
+$brand-primary: #24324A; /* 墨蓝 */
+$brand-primary-hover: #17243B;
+$brand-secondary: #F1E7D6; /* 金色浅底 */
+$brand-gold: #C79A4B;
+$brand-gold-soft: #F5E6C9;
+$brand-ink: #17243B;
 
-$bg-app: #FFFFFF; /* 整体页面背景色 */
+$bg-app: #F7F4EE; /* 整体页面背景色 */
 $bg-card: #FFFFFF; /* 卡片背景色 */
 
-$text-main: #111827; /* 主标题 */
-$text-secondary: #6B7280; /* 辅助文字 */
+$text-main: #17243B; /* 主标题 */
+$text-secondary: #667085; /* 辅助文字 */
 
 $radius-pill: 9999px; /* 药丸按钮大圆角 */
-$radius-card: 16px; /* 卡片大圆角 */
+$radius-card: 12px; /* 卡片圆角 */
 $radius-base: 8px; /* 基础圆角 */
 
-$shadow-soft: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
-$shadow-hover: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+$shadow-soft: 0 18px 48px rgba(36, 50, 74, 0.08);
+$shadow-hover: 0 24px 64px rgba(36, 50, 74, 0.14);

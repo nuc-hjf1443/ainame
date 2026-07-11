@@ -288,11 +288,15 @@ async def test_async_visual_failure_refunds_reserved_quota_once(session, monkeyp
         return await repository.update_visual_status(item, status="FAILED", error_message="mock failure")
 
     monkeypatch.setattr(visual_router, "refresh_brand_visual_status", fail_task)
-    await visual_router.get_visual_status(visual.id, user, session)
+    with pytest.raises(HTTPException) as error:
+        await visual_router.get_visual_status(visual.id, user, session)
+    assert error.value.status_code == 404
     await session.refresh(usage)
     assert usage.visual_used == 0
 
-    await visual_router.get_visual_status(visual.id, user, session)
+    with pytest.raises(HTTPException) as missing_error:
+        await visual_router.get_visual_status(visual.id, user, session)
+    assert missing_error.value.status_code == 404
     await session.refresh(usage)
     assert usage.visual_used == 0
 

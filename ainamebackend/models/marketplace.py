@@ -88,3 +88,91 @@ class ExpertReview(Base):
     rating: Mapped[int] = mapped_column(Integer)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class ExpertChatThread(Base):
+    __tablename__ = "expert_chat_threads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("user.id"), index=True)
+    expert_id: Mapped[int] = mapped_column(ForeignKey("expert_profiles.id"), index=True)
+    package_id: Mapped[int] = mapped_column(ForeignKey("expert_service_packages.id"), index=True)
+    service_order_id: Mapped[int | None] = mapped_column(ForeignKey("expert_service_orders.id"), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="OPEN", server_default="OPEN", index=True)
+    customer_unread_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    expert_unread_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class ExpertChatMessage(Base):
+    __tablename__ = "expert_chat_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    thread_id: Mapped[int] = mapped_column(ForeignKey("expert_chat_threads.id"), index=True)
+    sender_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), index=True)
+    content: Mapped[str] = mapped_column(Text)
+    read_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
+
+
+class ExpertChatAttachment(Base):
+    __tablename__ = "expert_chat_attachments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    thread_id: Mapped[int] = mapped_column(ForeignKey("expert_chat_threads.id"), index=True)
+    message_id: Mapped[int | None] = mapped_column(ForeignKey("expert_chat_messages.id"), nullable=True, index=True)
+    uploader_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), index=True)
+    file_name: Mapped[str] = mapped_column(String(255))
+    file_url: Mapped[str] = mapped_column(String(500))
+    file_path: Mapped[str] = mapped_column(String(500))
+    file_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    file_size: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
+
+
+class ExpertWallet(Base):
+    __tablename__ = "expert_wallets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    expert_id: Mapped[int] = mapped_column(ForeignKey("expert_profiles.id"), unique=True, index=True)
+    available_balance: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), server_default="0.00")
+    withdrawing_balance: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), server_default="0.00")
+    total_income: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), server_default="0.00")
+    total_withdrawn: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), server_default="0.00")
+    created_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class ExpertWalletTransaction(Base):
+    __tablename__ = "expert_wallet_transactions"
+    __table_args__ = (UniqueConstraint("transaction_type", "service_order_id", name="uq_wallet_tx_type_service_order"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    wallet_id: Mapped[int] = mapped_column(ForeignKey("expert_wallets.id"), index=True)
+    expert_id: Mapped[int] = mapped_column(ForeignKey("expert_profiles.id"), index=True)
+    service_order_id: Mapped[int | None] = mapped_column(ForeignKey("expert_service_orders.id"), nullable=True, index=True)
+    withdrawal_id: Mapped[int | None] = mapped_column(ForeignKey("expert_withdrawals.id"), nullable=True, index=True)
+    transaction_type: Mapped[str] = mapped_column(String(30), index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    balance_after: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class ExpertWithdrawal(Base):
+    __tablename__ = "expert_withdrawals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    wallet_id: Mapped[int] = mapped_column(ForeignKey("expert_wallets.id"), index=True)
+    expert_id: Mapped[int] = mapped_column(ForeignKey("expert_profiles.id"), index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    alipay_account: Mapped[str] = mapped_column(String(100))
+    real_name: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20), default="PENDING", server_default="PENDING", index=True)
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
+    reviewed_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)

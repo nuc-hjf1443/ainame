@@ -1,54 +1,43 @@
 <template>
-  <view class="auth-layout">
-    <view class="auth-left">
-      <view class="auth-header">
-        <text class="logo">启名星</text>
-      </view>
-      
-      <view class="form-wrapper">
-        <view class="hero-title">加入数万创意者的 启名星</view>
-        
-        <view class="segmented-control">
-          <view class="segment-btn active">登录</view>
-          <view class="segment-btn" @click="goRegister">注册</view>
-        </view>
-        
-        <button class="social-btn" @click="showThirdPartyUnavailable"><text class="icon">G</text> 继续使用 Google</button>
-        
-        <view class="divider"><text class="divider-text">或者</text></view>
-
-        <view class="input-group">
-          <text class="label">邮箱</text>
-          <input class="input-box" v-model="form.email" placeholder="请输入邮箱地址" />
-        </view>
-        
-        <view class="input-group">
-          <text class="label">密码</text>
-          <input class="input-box" v-model="form.password" type="password" placeholder="请输入密码" />
-        </view>
-        
-        <button class="submit-btn" :loading="loading" @click="handleLogin">登录</button>
-        
-        <view class="footer-links">
-          <text class="muted">还没有账号？</text> <text class="link" @click="goRegister">立即注册</text>
-        </view>
-        
-        <view class="legal-text">
-          登录即代表您同意我们的 <text class="link-inline">服务条款</text> 和 <text class="link-inline">隐私政策</text>
-        </view>
-      </view>
+  <view class="login-page">
+    <view class="topbar">
+      <view class="brand" @click="goHome"><view class="seal">启名</view><text>AI起名</text></view>
+      <view class="links"><text @click="goHome">返回首页</text><text>帮助中心</text><text>隐私政策</text></view>
     </view>
-    
-    <view class="auth-right">
-      <view class="showcase">
-        <view class="col">
-          <image class="showcase-img img-short" src="https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?q=80&w=600&auto=format&fit=crop" mode="aspectFill"></image>
-          <image class="showcase-img img-tall" src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=600&auto=format&fit=crop" mode="aspectFill"></image>
+
+    <view class="login-body">
+      <view class="promo">
+        <view class="promo-title">登录 AI起名，开启你的专属命名之旅</view>
+        <view class="promo-copy">AI 结合国学文化与现代审美，为个人、品牌与企业提供更有文化感的好名字。</view>
+        <view class="feature-row">
+          <view><view class="feature-icon">云</view><strong>智能起名</strong><text>快速生成高分好名</text></view>
+          <view><view class="feature-icon">屏</view><strong>品牌工作台</strong><text>品牌资产统一管理</text></view>
+          <view><view class="feature-icon">专</view><strong>专家服务</strong><text>真人专家精批方案</text></view>
         </view>
-        <view class="col">
-          <image class="showcase-img img-tall" src="https://images.unsplash.com/photo-1634152962476-4b8a00e1915c?q=80&w=600&auto=format&fit=crop" mode="aspectFill"></image>
-          <image class="showcase-img img-short" src="https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=600&auto=format&fit=crop" mode="aspectFill"></image>
+        <view class="stats">
+          <view><strong>10,521,648+</strong><text>已生成名称</text></view>
+          <view><strong>98.7%</strong><text>用户满意度</text></view>
+          <view><strong>安全可靠</strong><text>隐私保护</text></view>
         </view>
+      </view>
+
+      <view class="login-card">
+        <view class="card-title">欢迎回来</view>
+        <view class="card-sub">登录后继续使用 AI起名平台</view>
+        <view class="mode-tabs">
+          <view :class="mode === 'password' ? 'active' : ''" @click="mode = 'password'">密码登录</view>
+          <view :class="mode === 'code' ? 'active' : ''" @click="mode = 'code'">验证码登录</view>
+        </view>
+        <input v-model="email" placeholder="邮箱 / 手机号" />
+        <input v-if="mode === 'password'" v-model="password" password placeholder="请输入密码" />
+        <view v-else class="code-row">
+          <input v-model="code" placeholder="请输入验证码" />
+          <button :loading="sendingCode" @click="sendCode">获取验证码</button>
+        </view>
+        <view class="option-row"><label><checkbox :checked="remember" @click="remember = !remember" />记住我</label><text>忘记密码？</text></view>
+        <button class="login-btn" :loading="loading" @click="login">立即登录</button>
+        <button class="register-btn" @click="goRegister">注册新账号</button>
+        <view class="safe-tip">数据加密传输，保障账号安全</view>
       </view>
     </view>
   </view>
@@ -58,97 +47,83 @@
 import { ref } from 'vue';
 import http from '@/http/http.js';
 
-const form = ref({ email: '', password: '' });
+const email = ref('');
+const password = ref('');
+const code = ref('');
+const mode = ref('password');
+const remember = ref(false);
 const loading = ref(false);
+const sendingCode = ref(false);
 
-const isAdminRole = (user) => String(user?.role || '').trim().toUpperCase() === 'ADMIN';
-
-const resolveNextUrl = async (user) => {
-  if (isAdminRole(user)) return '/pages/admin/index';
-
-  try {
-    await http.checkAdminAccess();
-    uni.setStorageSync('user', { ...user, role: 'ADMIN' });
-    return '/pages/admin/index';
-  } catch (e) {
-    return '/pages/index/index';
-  }
-};
-
-const handleLogin = async () => {
-  if (!form.value.email || !form.value.password) return uni.showToast({ title: '请填写完整', icon: 'none' });
+const login = async () => {
+  if (!email.value.trim()) return uni.showToast({ title: '请输入邮箱', icon: 'none' });
+  if (mode.value !== 'password') return uni.showToast({ title: '验证码登录暂用于注册，请使用密码登录', icon: 'none' });
+  if (!password.value) return uni.showToast({ title: '请输入密码', icon: 'none' });
   loading.value = true;
   try {
-    const res = await http.login(form.value);
-    uni.setStorageSync('token', res.token);
-    uni.setStorageSync('user', res.user);
-    const nextUrl = await resolveNextUrl(res.user);
-    uni.showToast({ title: '登录成功' });
-    setTimeout(() => uni.reLaunch({ url: nextUrl }), 1000);
-  } catch (e) {
-    console.error(e);
+    const result = await http.login({ email: email.value.trim(), password: password.value });
+    uni.setStorageSync('token', result.token);
+    uni.setStorageSync('user', result.user);
+    uni.reLaunch({ url: '/pages/home/index' });
   } finally {
     loading.value = false;
   }
-}
-
+};
+const sendCode = async () => {
+  if (!email.value.trim()) return uni.showToast({ title: '请输入邮箱', icon: 'none' });
+  sendingCode.value = true;
+  try {
+    await http.getEmailCode(email.value.trim());
+    uni.showToast({ title: '验证码已发送', icon: 'none' });
+  } finally {
+    sendingCode.value = false;
+  }
+};
+const goHome = () => uni.reLaunch({ url: '/pages/home/index' });
 const goRegister = () => uni.navigateTo({ url: '/pages/register/register' });
-const showThirdPartyUnavailable = () => uni.showToast({ title: '暂未接入 Google 登录', icon: 'none' });
 </script>
 
-<style scoped>
-.auth-layout { display: flex; min-height: 100vh; background: #ffffff; color: #111827; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-.auth-left { flex: 1; display: flex; flex-direction: column; padding: 48rpx; max-width: 100%; box-sizing: border-box; overflow-y: auto; }
-@media (min-width: 900px) { .auth-left { max-width: 50%; padding: 80rpx 120rpx; } }
-.auth-right { display: none; flex: 1; background: #ffffff; padding: 48rpx; box-sizing: border-box; height: 100vh; overflow: hidden; position: sticky; top: 0; }
-@media (min-width: 900px) { .auth-right { display: flex; flex-direction: column; justify-content: center; } }
-
-/* Logo */
-.auth-header { margin-bottom: 80rpx; }
-.logo { font-size: 40rpx; font-weight: 800; color: #2563EB; }
-
-/* Form wrapper */
-.form-wrapper { width: 100%; max-width: 720rpx; margin: 0 auto; }
-.hero-title { font-size: 56rpx; font-weight: 700; color: #111827; margin-bottom: 64rpx; text-align: center; letter-spacing: -0.02em; line-height: 1.3; }
-
-/* Segmented Control */
-.segmented-control { display: flex; background: #E0E7FF; border-radius: 20rpx; padding: 8rpx; margin-bottom: 48rpx; }
-.segment-btn { flex: 1; text-align: center; padding: 24rpx 0; font-size: 30rpx; font-weight: 600; color: #4B5563; border-radius: 16rpx; cursor: pointer; transition: all 0.2s; }
-.segment-btn.active { background: #FFFFFF; color: #111827; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-
-/* Social button */
-.social-btn { width: 100%; background: #FFFFFF; border: 1px solid #D1D5DB; color: #111827; border-radius: 20rpx; height: 100rpx; font-size: 30rpx; font-weight: 600; margin-bottom: 48rpx; display: flex; justify-content: center; align-items: center; cursor: pointer; }
-.social-btn::after { border: none; }
-.social-btn .icon { font-size: 36rpx; font-weight: 800; background: conic-gradient(from 180deg at 50% 50%, #4285F4 0deg, #34A853 90deg, #FBBC05 180deg, #EA4335 270deg, #4285F4 360deg); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-right: 16rpx; }
-
-/* Divider */
-.divider { display: flex; align-items: center; margin-bottom: 48rpx; }
-.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #E5E7EB; }
-.divider-text { padding: 0 32rpx; color: #6B7280; font-size: 28rpx; }
-
-/* Inputs */
-.input-group { margin-bottom: 32rpx; }
-.label { display: block; font-size: 28rpx; color: #4B5563; margin-bottom: 16rpx; font-weight: 500; text-align: left;}
-.input-box { width: 100%; height: 96rpx; background: #FFFFFF; border: 1px solid #D1D5DB; border-radius: 20rpx; padding: 0 32rpx; font-size: 30rpx; color: #111827; box-sizing: border-box; transition: all 0.2s; }
-.input-box:focus { border-color: #2563EB; box-shadow: 0 0 0 2px rgba(37,99,235,0.2); outline: none; }
-
-/* Submit Button */
-.submit-btn { width: 100%; height: 100rpx; background: #0047FF; color: #FFFFFF; border-radius: 20rpx; font-size: 32rpx; font-weight: 600; margin-top: 24rpx; display: flex; justify-content: center; align-items: center; border: none; cursor: pointer; }
-.submit-btn::after { border: none; }
-
-/* Footer Links */
-.footer-links { text-align: center; margin-top: 48rpx; font-size: 28rpx; }
-.muted { color: #6B7280; }
-.link { color: #0047FF; font-weight: 600; cursor: pointer; }
-
-/* Legal text */
-.legal-text { text-align: center; margin-top: 48rpx; font-size: 24rpx; color: #9CA3AF; line-height: 1.6; }
-.link-inline { text-decoration: underline; cursor: pointer; }
-
-/* Right Panel Showcase Grid */
-.showcase { display: grid; grid-template-columns: 1fr 1fr; gap: 32rpx; height: 100%; }
-.col { display: flex; flex-direction: column; gap: 32rpx; height: 100%; }
-.showcase-img { width: 100%; border-radius: 32rpx; object-fit: cover; background: #E5E7EB; }
-.img-short { flex: 0.4; }
-.img-tall { flex: 0.6; }
+<style lang="scss" scoped>
+@import "@/uni.scss";
+.login-page { min-height: 100vh; background: radial-gradient(circle at 44% 28%, rgba(199,154,75,.24), transparent 170px), linear-gradient(135deg,#fbf7ef,#fff); color: $brand-primary; overflow: hidden; }
+.topbar { height: 72px; padding: 0 38px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(199,154,75,.24); background: rgba(255,255,255,.72); }
+.brand { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.seal { width: 42px; height: 42px; border: 2px solid $brand-primary; border-radius: 8px; writing-mode: vertical-rl; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 12px; }
+.brand text { font-size: 28px; font-weight: 900; }
+.links { display: flex; gap: 28px; color: $brand-primary; }
+.login-body { min-height: calc(100vh - 72px); display: grid; grid-template-columns: minmax(0,1fr) 520px; gap: 58px; align-items: center; max-width: 1360px; margin: 0 auto; padding: 46px 42px; box-sizing: border-box; }
+.promo { min-height: 620px; display: flex; flex-direction: column; justify-content: center; position: relative; }
+.promo::before { content: ""; position: absolute; inset: 10% -10% 0 -8%; opacity: .18; background: radial-gradient(ellipse at 20% 80%, #24324a 0 8%, transparent 45%), radial-gradient(ellipse at 70% 78%, #24324a 0 11%, transparent 50%); }
+.promo-title { position: relative; font-size: 46px; line-height: 1.32; font-weight: 900; max-width: 720px; }
+.promo-copy { position: relative; margin-top: 22px; color: #52647f; font-size: 20px; line-height: 1.8; max-width: 680px; }
+.feature-row { position: relative; display: grid; grid-template-columns: repeat(3,1fr); gap: 24px; margin-top: 50px; max-width: 700px; }
+.feature-row view view { margin: 0 auto 12px; }
+.feature-row>view { text-align: center; border-right: 1px solid #e7e0d4; }
+.feature-row>view:last-child { border-right: none; }
+.feature-icon { width: 58px; height: 58px; border-radius: 50%; border: 1px solid rgba(199,154,75,.6); color: #b68136; display: flex; align-items: center; justify-content: center; font-weight: 900; }
+.feature-row strong { display: block; }
+.feature-row text { display: block; color: $text-secondary; margin-top: 8px; font-size: 13px; line-height: 1.5; }
+.stats { position: relative; margin-top: 54px; max-width: 700px; display: grid; grid-template-columns: repeat(3,1fr); gap: 0; background: rgba(255,255,255,.78); border: 1px solid #e7e0d4; border-radius: 10px; padding: 22px; box-shadow: $shadow-soft; }
+.stats view { text-align: center; border-right: 1px solid #e7e0d4; }
+.stats view:last-child { border-right: none; }
+.stats strong { display: block; font-size: 22px; }
+.stats text { color: $text-secondary; font-size: 13px; }
+.login-card { background: rgba(255,255,255,.94); border: 1px solid #e7e0d4; border-radius: 18px; padding: 42px; box-shadow: 0 28px 80px rgba(36,50,74,.12); }
+.card-title { text-align: center; font-size: 28px; font-weight: 900; }
+.card-sub { text-align: center; color: $text-secondary; margin-top: 10px; }
+.mode-tabs { display: grid; grid-template-columns: 1fr 1fr; margin: 30px 0 22px; border-bottom: 1px solid #e7e0d4; }
+.mode-tabs view { text-align: center; padding: 14px 0; color: $text-secondary; border-bottom: 3px solid transparent; cursor: pointer; }
+.mode-tabs .active { color: $brand-primary; border-bottom-color: $brand-primary; font-weight: 900; }
+input { width: 100%; height: 52px; box-sizing: border-box; border: 1px solid #d8dde6; border-radius: 8px; background: #fff; margin-bottom: 18px; padding: 0 16px; font-size: 15px; }
+.code-row { display: grid; grid-template-columns: minmax(0,1fr) 120px; gap: 10px; }
+.code-row button { height: 52px; line-height: 52px; margin: 0; border-radius: 8px; background: #fff; color: #9b6a20; border: 1px solid rgba(199,154,75,.5); font-size: 13px; }
+.code-row button::after { border: none; }
+.option-row { display: flex; justify-content: space-between; align-items: center; color: $text-secondary; font-size: 14px; margin-bottom: 22px; }
+.login-btn,.register-btn { width: 100%; height: 52px; line-height: 52px; border-radius: 8px; font-size: 17px; font-weight: 900; margin: 0 0 16px; }
+.login-btn { background: $brand-primary; color: #f5d392; }
+.register-btn { background: #fff; color: #b68136; border: 1px solid rgba(199,154,75,.58); }
+.login-btn::after,.register-btn::after { border: none; }
+.safe-tip { margin-top: 22px; padding-top: 18px; border-top: 1px solid #eee7dc; color: $text-secondary; text-align: center; font-size: 13px; }
+@media (max-width: 980px) { .login-body { grid-template-columns: 1fr; } .promo { min-height: auto; } }
+@media (max-width: 640px) { .topbar { padding: 0 18px; } .links { display: none; } .login-body { padding: 24px 16px; } .promo-title { font-size: 34px; } .feature-row,.stats { grid-template-columns: 1fr; } .feature-row>view,.stats view { border-right: none; border-bottom: 1px solid #e7e0d4; padding-bottom: 18px; } .login-card { padding: 26px 18px; } }
 </style>

@@ -23,11 +23,15 @@ class NamingAssetOut(NamingAssetCreateIn):
 class VisualAssetOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    brand_kit_id: int | None
     thread_id: str
     name: str
     category: str
+    asset_type: str
+    variant_index: int
     moral: str | None
     slogan: str | None
+    image_model: str
     image_url: str | None
     status: str
     created_time: datetime

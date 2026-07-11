@@ -2,7 +2,7 @@
 
 Environment variables:
   DASHSCOPE_API_KEY or ALIBABA_BAILIAN_API_KEY or AIGC_API_KEY
-  BAILIAN_IMAGE_MODEL, default: wan2.6-image
+  BAILIAN_IMAGE_MODEL, default: wan2.7-image
   BAILIAN_PAYLOAD_MODE, default: dashscope-multimodal
     project: {"prompt": "...", "model": "..."}
     dashscope: {"model": "...", "input": {"prompt": "..."}, "parameters": {...}}
@@ -28,9 +28,19 @@ import httpx
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = BACKEND_DIR.parent if BACKEND_DIR.name == "ainamebackend" else BACKEND_DIR
-DEFAULT_MODEL = "wan2.6-image"
+DEFAULT_MODEL = "wan2.7-image"
 DEFAULT_IMAGE_ENDPOINT = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 DEFAULT_TASK_ENDPOINT = "https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}"
+MODEL_PRESETS = {
+    "wan2.7-image": {"payload_mode": "dashscope-multimodal", "size": "1K"},
+    "wan2.7-image-pro": {"payload_mode": "dashscope-multimodal", "size": "1K"},
+    "wan2.6-t2i": {"payload_mode": "dashscope-multimodal", "size": "1280*1280"},
+}
+LEGACY_MODELS = {
+    "wan2.6-image": {"payload_mode": "dashscope-multimodal", "size": "1024*1024"},
+    "wanx-v1": {"payload_mode": "dashscope", "size": "1024*1024"},
+}
+SUPPORTED_MODELS = {**MODEL_PRESETS, **LEGACY_MODELS}
 
 
 def load_dotenv() -> None:
@@ -130,6 +140,30 @@ def parse_image_url(data: dict[str, Any]) -> str | None:
     return output.get("url") or output.get("image_url") or data.get("url") or data.get("image_url")
 
 
+def parse_response_payload(raw_text: str) -> dict[str, Any]:
+    stripped = raw_text.strip()
+    if not stripped:
+        return {}
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        pass
+
+    last_data: dict[str, Any] = {}
+    for line in stripped.splitlines():
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+        raw = line[5:].strip()
+        if not raw or raw == "[DONE]":
+            continue
+        data = json.loads(raw)
+        if parse_image_url(data):
+            return data
+        last_data = data
+    return last_data
+
+
 def parse_chat_content(data: dict[str, Any]) -> str | None:
     choices = data.get("choices") or []
     if choices and isinstance(choices[0], dict):
@@ -148,6 +182,7 @@ async def submit_task(
     prompt: str,
     payload_mode: str,
     image_urls: list[str],
+    size: str,
 ) -> str:
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -159,12 +194,11 @@ async def submit_task(
             "model": model,
             "input": {"prompt": prompt},
             "parameters": {
-                "size": "1024*1024",
+                "size": size,
                 "n": 1,
             },
         }
     elif payload_mode == "dashscope-multimodal":
-        headers["X-DashScope-SSE"] = "enable"
         payload = {
             "model": model,
             "input": {
@@ -177,11 +211,12 @@ async def submit_task(
             },
             "parameters": {
                 "n": 1,
-                "size": "1024*1024",
-                "enable_interleave": True,
-                "stream": True,
+                "size": size,
+                "watermark": False,
             },
         }
+        if model.startswith("wan2.7-"):
+            payload["parameters"]["thinking_mode"] = False
     elif payload_mode == "openai-image":
         payload = {
             "model": model,
@@ -205,29 +240,18 @@ async def submit_task(
         }
 
     if payload_mode == "dashscope-multimodal":
-        last_data: dict[str, Any] = {}
-        async with client.stream("POST", endpoint, headers=headers, json=payload) as response:
-            print(f"submit_status_code={response.status_code}")
-            if response.status_code >= 400:
-                error_body = await response.aread()
-                print(f"submit_response={error_body.decode('utf-8', errors='replace')}")
-                response.raise_for_status()
-
-            async for line in response.aiter_lines():
-                if not line.startswith("data:"):
-                    continue
-                raw = line[5:].strip()
-                if not raw or raw == "[DONE]":
-                    continue
-                data = json.loads(raw)
-                last_data = data
-                image_url = parse_image_url(data)
-                if image_url:
-                    print(f"image_url={image_url}")
-
-        task_id = parse_task_id(last_data)
+        response = await client.post(endpoint, headers=headers, json=payload)
+        print(f"submit_status_code={response.status_code}")
+        if response.status_code >= 400:
+            print(f"submit_response={response.text}")
+        response.raise_for_status()
+        data = parse_response_payload(response.text)
+        image_url = parse_image_url(data)
+        if image_url:
+            print(f"image_url={image_url}")
+        task_id = parse_task_id(data)
         print(f"task_id={task_id}")
-        print(f"submit_task_status={parse_task_status(last_data)}")
+        print(f"submit_task_status={parse_task_status(data)}")
         return task_id
 
     response = await client.post(endpoint, headers=headers, json=payload)
@@ -276,36 +300,51 @@ async def poll_task(client: httpx.AsyncClient, api_key: str, endpoint_template: 
 async def main() -> None:
     load_dotenv()
     parser = argparse.ArgumentParser(description="Test Alibaba Cloud Bailian image generation API.")
-    parser.add_argument("--model", default=os.getenv("BAILIAN_IMAGE_MODEL", DEFAULT_MODEL))
+    parser.add_argument("--model", choices=sorted(SUPPORTED_MODELS), default=os.getenv("BAILIAN_IMAGE_MODEL", DEFAULT_MODEL))
     parser.add_argument("--prompt", default="A tiny golden bean mascot logo, clean white background, minimal style")
     parser.add_argument("--submit-url", default=get_submit_url())
     parser.add_argument("--task-url", default=get_task_url())
     parser.add_argument("--image-url", action="append", default=[])
+    parser.add_argument("--size", default=os.getenv("BAILIAN_IMAGE_SIZE"))
+    parser.add_argument("--list-models", action="store_true")
+    parser.add_argument("--all-models", action="store_true", help="Run the prompt against the three recommended models.")
     parser.add_argument(
         "--payload-mode",
         choices=["project", "dashscope", "dashscope-multimodal", "openai-image", "openai-chat"],
-        default=os.getenv("BAILIAN_PAYLOAD_MODE", "dashscope-multimodal"),
+        default=os.getenv("BAILIAN_PAYLOAD_MODE"),
     )
     parser.add_argument("--no-poll", action="store_true")
     args = parser.parse_args()
 
+    if args.list_models:
+        print("recommended_models=" + ",".join(MODEL_PRESETS))
+        print("legacy_models=" + ",".join(LEGACY_MODELS))
+        return
+
     api_key = get_api_key()
-    print(f"model={args.model}")
-    print(f"payload_mode={args.payload_mode}")
-    print(f"submit_url={args.submit_url}")
+    models = list(MODEL_PRESETS) if args.all_models else [args.model]
 
     async with httpx.AsyncClient(timeout=30) as client:
-        task_id = await submit_task(
-            client,
-            api_key,
-            args.submit_url,
-            args.model,
-            args.prompt,
-            args.payload_mode,
-            args.image_url,
-        )
-        if not args.no_poll and args.payload_mode != "dashscope-multimodal":
-            await poll_task(client, api_key, args.task_url, task_id)
+        for model in models:
+            preset = SUPPORTED_MODELS[model]
+            payload_mode = args.payload_mode or preset["payload_mode"]
+            size = args.size or preset["size"]
+            print(f"model={model}")
+            print(f"payload_mode={payload_mode}")
+            print(f"size={size}")
+            print(f"submit_url={args.submit_url}")
+            task_id = await submit_task(
+                client,
+                api_key,
+                args.submit_url,
+                model,
+                args.prompt,
+                payload_mode,
+                args.image_url,
+                size,
+            )
+            if not args.no_poll and payload_mode != "dashscope-multimodal":
+                await poll_task(client, api_key, args.task_url, task_id)
 
 
 if __name__ == "__main__":

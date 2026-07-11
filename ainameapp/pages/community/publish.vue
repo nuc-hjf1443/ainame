@@ -1,26 +1,92 @@
 <template>
-  <view class="page">
-    <view class="title">发布名字投票</view>
-    <input class="field" v-model="form.title" placeholder="给这组名字一个标题" />
-    <textarea class="area" v-model="form.description" placeholder="补充背景和希望网友关注的方向" />
-    <picker :range="categories" @change="e=>form.category=categories[e.detail.value]"><view class="field">分类：{{ form.category }}</view></picker>
-    <view class="section">选择 2–5 个候选名</view>
-    <view v-for="item in available" :key="item.key" :class="['asset',selectedKeys.includes(item.key)?'selected':'']" @click="toggle(item)">
-      <text class="name">{{ item.name }}</text><text>{{ item.moral }}</text>
+  <DashboardLayout currentMenu="community">
+    <view class="publish-page">
+      <view class="page-head">
+        <view>
+          <view class="title">发起我的投票</view>
+          <view class="sub">把候选名称交给社区，让真实选择帮助你做决定。</view>
+        </view>
+      </view>
+
+      <view class="form-card">
+        <view class="field-label">投票标题</view>
+        <input v-model="form.title" placeholder="例如：帮我选一个品牌名" />
+        <view class="field-label">分类</view>
+        <picker :range="categories" @change="event => form.category = categories[event.detail.value]">
+          <view class="picker">{{ form.category }}<text>⌄</text></view>
+        </picker>
+        <view class="field-label">背景描述</view>
+        <textarea v-model="form.description" placeholder="说明用途、行业、目标用户和命名偏好"></textarea>
+
+        <view class="candidate-head">
+          <view class="section-title">候选名称</view>
+          <button class="outline" @click="addCandidate">添加候选</button>
+        </view>
+        <view v-for="(item,index) in form.candidates" :key="index" class="candidate-row">
+          <view class="candidate-index">{{ index + 1 }}</view>
+          <input v-model="item.name" placeholder="候选名称" />
+          <input v-model="item.moral" placeholder="名称说明（可选）" />
+        </view>
+
+        <button class="dark" :loading="submitting" @click="submit">发布投票</button>
+      </view>
     </view>
-    <view class="section">封面 Logo（可选）</view>
-    <picker :range="visualLabels" @change="e=>form.cover_visual_id=visuals[e.detail.value-1]?.id||null"><view class="field">{{ selectedVisualLabel }}</view></picker>
-    <button class="primary" :loading="loading" @click="publish">发布到广场</button>
-  </view>
+  </DashboardLayout>
 </template>
+
 <script setup>
-import {computed,ref} from 'vue';import{onLoad}from'@dcloudio/uni-app';import http from '@/http/http.js';
-const categories=['人名','企业名','宠物名'];const form=ref({title:'',description:'',category:'人名',cover_visual_id:null});const available=ref([]),visuals=ref([]),selectedKeys=ref([]),loading=ref(false);
-const visualLabels=computed(()=>['不使用封面',...visuals.value.map(v=>`${v.name} · ${v.status}`)]);const selectedVisualLabel=computed(()=>form.value.cover_visual_id?visualLabels.value[visuals.value.findIndex(v=>v.id===form.value.cover_visual_id)+1]:'不使用封面');
-const toggle=item=>{const i=selectedKeys.value.indexOf(item.key);if(i>=0)selectedKeys.value.splice(i,1);else if(selectedKeys.value.length<5)selectedKeys.value.push(item.key)};
-const publish=async()=>{if(!form.value.title.trim()||selectedKeys.value.length<2)return uni.showToast({title:'请填写标题并选择至少2个名字',icon:'none'});loading.value=true;try{const candidates=available.value.filter(i=>selectedKeys.value.includes(i.key)).map(i=>({source_asset_id:i.id||null,name:i.name,moral:i.moral||'',reference:i.reference||''}));const post=await http.createCommunityPost({...form.value,candidates});uni.redirectTo({url:`/pages/community/detail?id=${post.id}`})}finally{loading.value=false}};
-onLoad(async()=>{const current=uni.getStorageSync('publishCandidates')||[];const assets=(await http.getNameAssets()).items;available.value=[...current.map((i,index)=>({...i,key:`current-${index}`})),...assets.map(i=>({...i,key:`asset-${i.id}`}))];visuals.value=(await http.getVisualAssets()).items.filter(v=>v.status==='SUCCESS');selectedKeys.value=current.slice(0,5).map((_,i)=>`current-${i}`);if(current[0]?.category)form.value.category=current[0].category});
+import { reactive, ref } from 'vue';
+import DashboardLayout from '@/components/DashboardLayout/DashboardLayout.vue';
+import http from '@/http/http.js';
+
+const categories = ['企业名', '人名', '宠物名'];
+const submitting = ref(false);
+const form = reactive({
+  title: '',
+  category: '企业名',
+  description: '',
+  candidates: [{ name: '', moral: '' }, { name: '', moral: '' }]
+});
+const addCandidate = () => {
+  if (form.candidates.length >= 5) return uni.showToast({ title: '最多 5 个候选', icon: 'none' });
+  form.candidates.push({ name: '', moral: '' });
+};
+const submit = async () => {
+  const candidates = form.candidates.filter(item => item.name.trim()).map(item => ({ name: item.name.trim(), moral: item.moral.trim() || null, reference: null }));
+  if (!form.title.trim()) return uni.showToast({ title: '请填写标题', icon: 'none' });
+  if (candidates.length < 2) return uni.showToast({ title: '至少填写 2 个候选名称', icon: 'none' });
+  submitting.value = true;
+  try {
+    const post = await http.createCommunityPost({
+      title: form.title.trim(),
+      description: form.description.trim() || null,
+      category: form.category,
+      candidates
+    });
+    uni.redirectTo({ url: `/pages/community/detail?id=${post.id}` });
+  } finally {
+    submitting.value = false;
+  }
+};
 </script>
-<style scoped>
-.page{padding:30rpx;background:#f5f7f6;min-height:100vh;box-sizing:border-box}.title{font-size:40rpx;font-weight:700;margin-bottom:24rpx}.field,.area{background:#fff;border:1px solid #dbe5e3;border-radius:8rpx;padding:22rpx;margin-bottom:16rpx;box-sizing:border-box;width:100%}.area{height:150rpx}.section{font-weight:700;margin:28rpx 0 14rpx}.asset{background:#fff;padding:20rpx;border:1px solid #e2e8f0;border-radius:8rpx;margin-bottom:12rpx;display:flex;gap:20rpx;align-items:center}.asset.selected{border-color:#0f766e;background:#ecfdf8}.name{font-size:32rpx;font-weight:700;color:#134e4a}.primary{background:#0f766e;color:#fff;margin-top:30rpx;border-radius:8rpx}
+
+<style lang="scss" scoped>
+@import "@/uni.scss";
+.publish-page { max-width: 980px; margin: 0 auto; }
+.page-head { margin: 30px 0 24px; }
+.title { color: $brand-primary; font-size: 40px; font-weight: 900; line-height: 1.1; }
+.sub { margin-top: 10px; color: $text-secondary; }
+.form-card { background: rgba(255,255,255,.96); border: 1px solid #e7e0d4; border-radius: 10px; box-shadow: $shadow-soft; padding: 28px; }
+.field-label,.section-title { color: $brand-primary; font-weight: 900; margin: 18px 0 8px; }
+input,.picker,textarea { width: 100%; box-sizing: border-box; border: 1px solid #e7e0d4; border-radius: 8px; background: #fbfaf7; color: $text-main; font-size: 14px; }
+input,.picker { height: 46px; padding: 0 14px; display: flex; align-items: center; justify-content: space-between; }
+textarea { height: 120px; padding: 14px; line-height: 1.6; }
+.candidate-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 24px; }
+.outline,.dark { margin: 0; border-radius: 8px; font-weight: 900; }
+.outline { height: 36px; line-height: 34px; padding: 0 16px; background: #fff; color: #9b6a20; border: 1px solid rgba(199,154,75,.5); }
+.outline::after,.dark::after { border: none; }
+.candidate-row { display: grid; grid-template-columns: 36px 1fr 1.4fr; gap: 12px; align-items: center; margin-top: 12px; }
+.candidate-index { width: 32px; height: 32px; border-radius: 50%; background: $brand-gold; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 900; }
+.dark { width: 100%; height: 48px; line-height: 48px; background: $brand-primary; color: #f5d392; margin-top: 26px; }
+@media (max-width: 680px) { .candidate-row { grid-template-columns: 1fr; } }
 </style>

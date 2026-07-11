@@ -6,7 +6,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 VisualCategory = Literal["人名", "企业名", "宠物名"]
 VisualStatus = Literal["PENDING", "PROCESSING", "SUCCESS", "FAILED"]
-VisualImageModel = Literal["wan2.6-image"]
+VisualImageModel = Literal[
+    "wan2.7-image-pro",
+    "wan2.7-image",
+    "wan2.6-t2i",
+    "wan2.6-image",
+    "wanx-v1",
+]
 
 
 class VisualGenerateIn(BaseModel):
@@ -15,7 +21,7 @@ class VisualGenerateIn(BaseModel):
     moral: str = Field("", max_length=2000, description="名字的寓意")
     category: VisualCategory = Field(..., description="分类")
     design_style: str = Field(default="现代极简商业风", max_length=100, description="期望的视觉设计风格")
-    image_model: VisualImageModel = Field(default="wan2.6-image", description="图像生成模型")
+    image_model: VisualImageModel = Field(default="wan2.7-image", description="图像生成模型")
 
 
 class VisualGenerateOut(BaseModel):
@@ -50,7 +56,7 @@ class BrandKitCreateIn(BaseModel):
     audience: str = Field(..., min_length=2, max_length=200)
     design_style: str = Field(default="现代简约", min_length=2, max_length=100)
     primary_color: str = Field(default="蓝色", min_length=1, max_length=50)
-    image_model: VisualImageModel = "wan2.6-image"
+    image_model: VisualImageModel = "wan2.7-image"
 
 
 class BrandKitAssetOut(BaseModel):
@@ -59,8 +65,13 @@ class BrandKitAssetOut(BaseModel):
     asset_type: str
     variant_index: int
     status: VisualStatus
+    image_model: str
     image_url: str | None
     error_message: str | None
+
+
+class BrandKitAssetRegenerateIn(BaseModel):
+    image_model: VisualImageModel | None = None
 
 
 class BrandKitOut(BaseModel):
@@ -72,6 +83,7 @@ class BrandKitOut(BaseModel):
     audience: str
     design_style: str
     primary_color: str
+    image_model: str
     slogan: str
     status: VisualStatus
     assets: list[BrandKitAssetOut]

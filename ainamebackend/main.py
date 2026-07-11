@@ -81,6 +81,11 @@ app.mount(
     StaticFiles(directory=settings.BASE_DIR / "uploads" / "visuals", check_dir=False),
     name="visuals",
 )
+app.mount(
+    "/uploads/chat",
+    StaticFiles(directory=settings.BASE_DIR / "uploads" / "chat", check_dir=False),
+    name="chat_uploads",
+)
 
 app.add_middleware(
     CORSMiddleware,

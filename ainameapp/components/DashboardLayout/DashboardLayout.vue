@@ -1,75 +1,56 @@
 <template>
-  <view class="dashboard-layout">
-    <!-- 左侧边栏 -->
-    <view class="sidebar" :class="{ 'sidebar-mobile-open': isMobileSidebarOpen }">
-      <view class="sidebar-header">
-        <text class="logo-icon">✨</text>
-        <text class="logo-text">启名星</text>
+  <view class="app-shell">
+    <view class="top-nav">
+      <view class="brand" @click="switchMenu('home', '/pages/home/index')">
+        <view class="seal">启名</view>
+        <view>
+          <view class="brand-name">AI起名</view>
+          <view class="brand-sub">国学与品牌智能体</view>
+        </view>
       </view>
 
-      <scroll-view scroll-y class="sidebar-nav">
-        <view class="nav-group">
-          <!-- 动态判断 currentMenu -->
-          <view :class="['nav-item', currentMenu === 'ai_name' ? 'active' : '']" @click="switchMenu('ai_name', '/pages/index/index')">
-            <text class="nav-icon">🧭</text> 起名工作台
-          </view>
-          <view :class="['nav-item', currentMenu === 'community' ? 'active' : '']" @click="switchMenu('community', '/pages/community/index')">
-            <text class="nav-icon">💡</text> 灵感广场
-          </view>
-          <view :class="['nav-item', currentMenu === 'expert' ? 'active' : '']" @click="switchMenu('expert', '/pages/marketplace/index')">
-            <text class="nav-icon">🤝</text> 专家服务
-          </view>
-          <view :class="['nav-item', currentMenu === 'recharge' ? 'active' : '']" @click="switchMenu('recharge', '/pages/recharge/index')">
-            <text class="nav-icon">💳</text> 充值中心
-          </view>
-          <view :class="['nav-item', currentMenu === 'orders' ? 'active' : '']" @click="switchMenu('orders', '/pages/orders/index')">
-            <text class="nav-icon">📋</text> 我的订单
-          </view>
-          <view v-if="isExpert" :class="['nav-item', currentMenu === 'expert_workbench' ? 'active' : '']" @click="switchMenu('expert_workbench', '/pages/expert/workbench')">
-            <text class="nav-icon">🧑‍🏫</text> 专家工作台
-          </view>
+      <view class="desktop-nav">
+        <view
+          v-for="item in menus"
+          :key="item.key"
+          :class="['nav-link', currentMenu === item.key ? 'active' : '']"
+          @click="switchMenu(item.key, item.url)"
+        >
+          {{ item.label }}
         </view>
-      </scroll-view>
+      </view>
 
-      <view class="sidebar-footer">
-        <view :class="['nav-item', currentMenu === 'assets' ? 'active' : '']" @click="switchMenu('assets', '/pages/assets/index')">
-          <text class="nav-icon">📦</text> 资产中心
+      <view class="top-actions">
+        <button class="member-btn" @click="switchMenu('recharge', '/pages/recharge/index')">开通会员</button>
+        <view class="bell">⌕</view>
+        <view v-if="token" class="profile" @click="switchMenu('profile', '/pages/profile/index')">
+          <view class="avatar">{{ avatarText }}</view>
+          <view class="profile-copy">
+            <text>{{ user.username || user.email || '用户' }}</text>
+            <text>{{ versionText }}</text>
+          </view>
+          <text class="chevron">⌄</text>
         </view>
+        <button v-else class="login-btn" @click="navTo('/pages/login/login')">登录</button>
       </view>
     </view>
 
-    <!-- 移动端侧边栏遮罩 -->
-    <view class="sidebar-mask" v-if="isMobileSidebarOpen" @click="toggleMobileSidebar"></view>
-
-    <!-- 右侧主内容区 -->
-    <view class="main-container">
-      <!-- 顶部导航 -->
-      <view class="topbar">
-        <!-- 移动端菜单按钮 -->
-        <view class="mobile-menu-btn" @click="toggleMobileSidebar">
-          <text class="menu-icon">☰</text>
-        </view>
-
-        <!-- 搜索框 (可根据需求接入真实搜索逻辑) -->
-        <!-- 右上角：真实的账号操作区 -->
-        <view class="topbar-actions" v-if="token">
-          <text v-if="isAdmin" class="action-text" @click="goAdmin">后台管理</text>
-          <text class="action-text text-danger" @click="logout">退出</text>
-          <view class="action-icon" @click="switchMenu('profile', '/pages/profile/index')">
-            <view class="avatar">{{ (user.username || user.email || 'U')[0].toUpperCase() }}</view>
-          </view>
-        </view>
-        <view class="topbar-actions" v-else>
-          <text class="action-text login-text" @click="navTo('/pages/login/login')">登录 / 注册</text>
-        </view>
+    <scroll-view scroll-y class="content-scroll">
+      <view class="ink-bg">
+        <slot></slot>
       </view>
+    </scroll-view>
 
-      <!-- 页面插槽内容 -->
-      <scroll-view scroll-y class="content-scroll">
-        <view class="page-content">
-          <slot></slot>
-        </view>
-      </scroll-view>
+    <view class="mobile-tabbar">
+      <view
+        v-for="item in mobileMenus"
+        :key="item.key"
+        :class="['mobile-tab', currentMenu === item.key ? 'active' : '']"
+        @click="switchMenu(item.key, item.url)"
+      >
+        <text class="tab-icon">{{ item.icon }}</text>
+        <text>{{ item.label }}</text>
+      </view>
     </view>
   </view>
 </template>
@@ -79,40 +60,37 @@ import { computed, ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
 import http from '@/http/http.js';
 
-// 接收父页面传进来的当前菜单标识
 const props = defineProps({
-  currentMenu: {
-    type: String,
-    default: 'ai_name'
-  }
+  currentMenu: { type: String, default: 'home' }
 });
 
-// 用户状态逻辑
 const token = ref(uni.getStorageSync('token'));
 const user = ref(uni.getStorageSync('user') || {});
-const isAdmin = computed(() => String(user.value.role || '').trim().toUpperCase() === 'ADMIN');
-const isExpert = computed(() => String(user.value.expert_status || '').trim().toUpperCase() === 'APPROVED');
-const isMobileSidebarOpen = ref(false);
+const isAdmin = computed(() => String(user.value.role || '').toUpperCase() === 'ADMIN');
+const isExpert = computed(() => String(user.value.expert_status || '').toUpperCase() === 'APPROVED');
+const avatarText = computed(() => String(user.value.username || user.value.email || 'U').slice(0, 1).toUpperCase());
+const versionText = computed(() => isAdmin.value ? '管理员' : isExpert.value ? '专家版' : '企业版');
 
-const toggleMobileSidebar = () => {
-  isMobileSidebarOpen.value = !isMobileSidebarOpen.value;
-};
+const menus = [
+  { key: 'home', label: '首页', url: '/pages/home/index' },
+  { key: 'naming', label: 'AI起名', url: '/pages/naming/index' },
+  { key: 'brand', label: '品牌工作台', url: '/pages/brand-kit/index' },
+  { key: 'community', label: '灵感社区', url: '/pages/community/index' },
+  { key: 'expert', label: '专家服务', url: '/pages/marketplace/index' },
+  { key: 'assets', label: '资产中心', url: '/pages/assets/index' }
+];
+const mobileMenus = [
+  { key: 'home', label: '首页', icon: '⌂', url: '/pages/home/index' },
+  { key: 'naming', label: '起名', icon: '名', url: '/pages/naming/index' },
+  { key: 'community', label: '灵感', icon: '◇', url: '/pages/community/index' },
+  { key: 'expert', label: '专家', icon: '◎', url: '/pages/marketplace/index' },
+  { key: 'assets', label: '资产', icon: '□', url: '/pages/assets/index' }
+];
 
-const navTo = (url) => {
-  uni.navigateTo({ url });
-};
-
-// 左侧菜单切换逻辑：平滑跳转，避免白屏
-const switchMenu = (menuKey, url) => {
-  if (props.currentMenu === menuKey) return; // 点自己不跳转
+const navTo = url => uni.navigateTo({ url });
+const switchMenu = (key, url) => {
+  if (props.currentMenu === key) return;
   uni.redirectTo({ url });
-};
-
-const goAdmin = () => uni.reLaunch({ url: '/pages/admin/index' });
-const logout = () => {
-  uni.removeStorageSync('token');
-  uni.removeStorageSync('user');
-  uni.reLaunch({ url: '/pages/login/login' });
 };
 
 const refreshUser = async () => {
@@ -123,226 +101,276 @@ const refreshUser = async () => {
     const profile = await http.getMyProfile();
     user.value = { ...user.value, username: profile.username, email: profile.email, role: profile.role, expert_status: profile.expert_status };
     uni.setStorageSync('user', user.value);
-  } catch (e) {}
+  } catch (error) {}
 };
 
 onShow(refreshUser);
 </script>
 
-<style scoped lang="scss">
+<style lang="scss" scoped>
 @import "@/uni.scss";
-.dashboard-layout {
-  display: flex;
+
+.app-shell {
+  width: 100vw;
   height: 100vh;
   height: 100dvh;
-  width: 100vw;
-  background-color: $bg-app;
   overflow: hidden;
-  box-sizing: border-box;
-}
-
-/* Sidebar Styles */
-.sidebar {
-  width: 260px;
-  flex: 0 0 260px;
-  box-sizing: border-box;
-  background-color: #FFFFFF;
-  border-right: 1px solid #F3F4F6;
-  display: flex;
-  flex-direction: column;
-  transition: transform 0.3s ease;
-  z-index: 100;
-}
-
-.sidebar-header {
-  height: 64px;
-  display: flex;
-  align-items: center;
-  padding: 0 24px;
-  box-sizing: border-box;
-}
-.logo-icon {
-  font-size: 24px;
-  margin-right: 12px;
-}
-.logo-text {
-  font-size: 20px;
-  font-weight: 800;
   color: $text-main;
-  letter-spacing: -0.5px;
+  background: #f8f4ec;
 }
-
-.sidebar-nav {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
+.top-nav {
+  height: 72px;
+  padding: 0 34px;
   box-sizing: border-box;
-  padding: 12px 12px;
-  overflow: hidden;
-}
-.nav-item {
   display: flex;
   align-items: center;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  padding: 12px 16px;
-  border-radius: $radius-base;
-  color: $text-secondary;
-  font-size: 15px;
-  font-weight: 500;
-  margin-bottom: 4px;
+  gap: 28px;
+  background: rgba(255,255,255,.9);
+  border-bottom: 1px solid rgba(199,154,75,.24);
+  backdrop-filter: blur(14px);
+  position: relative;
+  z-index: 20;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   cursor: pointer;
-  transition: all 0.2s;
+  flex-shrink: 0;
 }
-.nav-item:hover {
-  background-color: #F3F4F6;
-  color: $text-main;
-}
-.nav-item.active {
-  background-color: $brand-secondary;
+.seal {
+  width: 42px;
+  height: 42px;
+  border: 2px solid $brand-primary;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  writing-mode: vertical-rl;
   color: $brand-primary;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.05;
 }
-.nav-icon {
-  margin-right: 12px;
-  font-size: 18px;
-  flex-shrink: 0;
+.brand-name {
+  font-size: 26px;
+  font-weight: 900;
+  color: $brand-primary;
 }
-
-.sidebar-footer {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 12px 12px;
-  border-top: 1px solid #F3F4F6;
-  flex-shrink: 0;
-  overflow: hidden;
+.brand-sub {
+  margin-top: 2px;
+  color: $text-secondary;
+  font-size: 12px;
 }
-
-/* Main Container */
-.main-container {
+.desktop-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
   height: 100%;
-  overflow: hidden;
+  gap: 20px;
 }
-
-/* Topbar */
-.topbar {
-  height: 56px;
-  background-color: $bg-app;
+.nav-link {
+  height: 72px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 28px;
-  box-sizing: border-box;
-  flex-shrink: 0;
-  border-bottom: 1px solid #F3F4F6;
-}
-
-.topbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  margin-left: auto;
-}
-
-.action-text {
-  font-size: 14px;
-  color: $text-secondary;
+  color: $brand-primary;
+  font-size: 16px;
   cursor: pointer;
-  transition: color 0.2s;
-  font-weight: 500;
+  position: relative;
+  white-space: nowrap;
 }
-.action-text:hover { color: $text-main; }
-.text-danger:hover { color: #DC2626; }
-.login-text { color: $brand-primary; font-weight: 600; }
-
-.action-icon {
-  font-size: 20px;
-  color: $text-secondary;
+.nav-link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  border-radius: 999px;
+  background: transparent;
+}
+.nav-link.active {
+  font-weight: 900;
+}
+.nav-link.active::after {
+  background: $brand-gold;
+}
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.member-btn,
+.login-btn {
+  height: 36px;
+  line-height: 34px;
+  margin: 0;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(199,154,75,.55);
+  background: #fff;
+  color: #b68136;
+  font-size: 13px;
+  font-weight: 900;
+}
+.login-btn {
+  background: $brand-primary;
+  color: #f5d392;
+  border-color: $brand-primary;
+}
+.member-btn::after,
+.login-btn::after {
+  border: none;
+}
+.bell {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: $brand-primary;
+  border-radius: 50%;
+}
+.profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   cursor: pointer;
 }
 .avatar {
-  width: 36px;
-  height: 36px;
-  background-color: $brand-primary;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   display: flex;
-  justify-content: center;
   align-items: center;
-  color: #FFFFFF;
-  font-weight: bold;
-  font-size: 16px;
-  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.2);
+  justify-content: center;
+  background: $brand-primary;
+  color: #f5d392;
+  font-weight: 900;
 }
-
-/* Content Area */
-.content-scroll {
-  flex: 1;
-  min-height: 0;
-  height: calc(100vh - 56px);
-  height: calc(100dvh - 56px);
+.profile-copy {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.profile-copy text:first-child {
+  max-width: 96px;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 900;
+}
+.profile-copy text:last-child {
+  color: $text-secondary;
+  font-size: 12px;
+}
+.chevron {
+  color: $text-secondary;
+}
+.content-scroll {
+  height: calc(100vh - 72px);
+  height: calc(100dvh - 72px);
   box-sizing: border-box;
 }
-.page-content {
-  width: 100%;
+.ink-bg {
+  min-height: calc(100vh - 72px);
+  min-height: calc(100dvh - 72px);
   box-sizing: border-box;
-  padding: 28px 32px 56px;
-  max-width: 1200px;
-  margin: 0 auto;
+  padding: 30px 32px 46px;
+  background:
+    radial-gradient(circle at 75% 48px, rgba(199,154,75,.22), transparent 150px),
+    linear-gradient(180deg, rgba(255,255,255,.35), rgba(255,255,255,0) 360px),
+    #f8f4ec;
+  position: relative;
+}
+.ink-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 260px;
+  pointer-events: none;
+  opacity: .58;
+  background:
+    radial-gradient(ellipse at 10% 60%, rgba(36,50,74,.14), transparent 130px),
+    radial-gradient(ellipse at 78% 70%, rgba(36,50,74,.12), transparent 160px),
+    radial-gradient(circle at 82% 18%, rgba(199,154,75,.22) 0 52px, transparent 54px);
+}
+.ink-bg :deep(> *) {
+  position: relative;
+  z-index: 1;
+}
+.mobile-tabbar {
+  display: none;
 }
 
-/* Mobile Adjustments */
-.mobile-menu-btn {
-  display: none;
-  font-size: 24px;
-  color: $text-main;
-  cursor: pointer;
+@media (max-width: 980px) {
+  .desktop-nav {
+    gap: 12px;
+  }
+  .nav-link {
+    font-size: 14px;
+  }
+  .profile-copy,
+  .bell {
+    display: none;
+  }
 }
-.sidebar-mask {
-  display: none;
-}
-
 @media (max-width: 768px) {
-  .sidebar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    transform: translateX(-100%);
+  .top-nav {
+    height: 68px;
+    padding: 0 18px;
+    justify-content: space-between;
   }
-  .sidebar.sidebar-mobile-open {
-    transform: translateX(0);
+  .desktop-nav,
+  .brand-sub,
+  .member-btn,
+  .chevron {
+    display: none;
   }
-  .sidebar-mask {
-    display: block;
+  .brand-name {
+    font-size: 24px;
+  }
+  .content-scroll {
+    height: calc(100vh - 68px - 66px);
+    height: calc(100dvh - 68px - 66px);
+  }
+  .ink-bg {
+    min-height: calc(100vh - 68px - 66px);
+    min-height: calc(100dvh - 68px - 66px);
+    padding: 16px 14px 28px;
+  }
+  .mobile-tabbar {
     position: fixed;
-    top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0,0,0,0.5);
-    z-index: 90;
+    z-index: 30;
+    height: 66px;
+    padding-bottom: env(safe-area-inset-bottom);
+    background: rgba(255,255,255,.94);
+    border-top: 1px solid rgba(199,154,75,.24);
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
   }
-  .topbar {
-    padding: 0 20px;
-    height: 52px;
+  .mobile-tab {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    font-size: 12px;
+    color: #8a92a0;
   }
-  .mobile-menu-btn {
-    display: block;
+  .mobile-tab.active {
+    color: $brand-primary;
+    font-weight: 900;
   }
-  .page-content {
-    padding: 18px 16px 40px;
-  }
-  .content-scroll {
-    height: calc(100vh - 52px);
-    height: calc(100dvh - 52px);
+  .tab-icon {
+    font-size: 19px;
   }
 }
 </style>

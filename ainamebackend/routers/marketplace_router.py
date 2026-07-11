@@ -1,9 +1,11 @@
 import uuid
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.status import HTTP_502_BAD_GATEWAY
 
+import settings
 from services.alipay_service import AlipayClient, AlipayError
 from services.marketplace_service import generate_expert_report_draft
 from core.payment_urls import alipay_notify_url, alipay_return_url
@@ -13,13 +15,29 @@ from repository.asset_repo import AssetRepository
 from repository.marketplace_repo import MarketplaceRepository
 from repository.payment_repo import PaymentRepository
 from schemas.marketplace_schemas import (
-    ExpertApplyIn, ExpertOut, ExpertPageOut, ExpertReviewOut, RejectOrderIn, ReportIn, ReportOut,
-    ReviewIn, ServiceOrderCreateIn, ServiceOrderOut, ServiceOrderPageOut, ServicePackageOut,
+    ChatAttachmentOut, ChatMessageIn, ChatMessageOut, ChatMessagePageOut, ChatThreadCreateIn,
+    ChatThreadDetailOut, ChatThreadOut,
+    ChatThreadPageOut, ExpertApplyIn, ExpertOut, ExpertPageOut, ExpertReviewOut,
+    RejectOrderIn, ReportIn, ReportOut, ReviewIn, ServiceOrderCreateIn, ServiceOrderOut,
+    ServiceOrderPageOut, ServicePackageOut, WalletOut, WalletTransactionPageOut,
+    WithdrawalCreateIn, WithdrawalOut, WithdrawalPageOut,
 )
 from schemas.payment_schemas import AlipayPaymentOut
 
 
 router = APIRouter(prefix="/marketplace", tags=["marketplace"])
+CHAT_UPLOAD_DIR = settings.BASE_DIR / "uploads" / "chat"
+MAX_CHAT_ATTACHMENT_SIZE = 10 * 1024 * 1024
+ALLOWED_CHAT_ATTACHMENT_TYPES = {
+    "application/pdf",
+    "text/plain",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+ALLOWED_CHAT_ATTACHMENT_SUFFIXES = {".pdf", ".txt", ".doc", ".docx", ".png", ".jpg", ".jpeg", ".webp"}
 
 
 async def require_expert(user: User, repo: MarketplaceRepository):
@@ -76,6 +94,160 @@ async def my_expert_profile(user: User = Depends(get_current_user), session: Asy
     if not profile:
         raise HTTPException(404, detail="尚未申请专家")
     return await repo.expert_payload(profile)
+
+
+@router.post("/chat/threads", response_model=ChatThreadOut)
+async def create_chat_thread(data: ChatThreadCreateIn, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)):
+    repo = MarketplaceRepository(session)
+    thread = await repo.create_or_get_chat_thread(user.id, data.expert_id, data.package_id)
+    if not thread:
+        raise HTTPException(400, detail="专家或套餐无效，无法发起咨询")
+    return await repo._chat_thread_payload(thread)
+
+
+@router.get("/chat/threads", response_model=ChatThreadPageOut)
+async def list_my_chat_threads(
+        page: int = Query(1, ge=1),
+        page_size: int = Query(20, ge=1, le=100),
+        user: User = Depends(get_current_user),
+        session: AsyncSession = Depends(get_session),
+):
+    items, total = await MarketplaceRepository(session).list_customer_chat_threads(user.id, page, page_size)
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.get("/chat/threads/{thread_id}", response_model=ChatThreadDetailOut)
+async def get_chat_thread_detail(
+        thread_id: int,
+        user: User = Depends(get_current_user),
+        session: AsyncSession = Depends(get_session),
+):
+    detail = await MarketplaceRepository(session).get_chat_thread_detail(thread_id, user.id)
+    if not detail:
+        raise HTTPException(404, detail="会话不存在")
+    return detail
+
+
+@router.get("/expert/chat/threads", response_model=ChatThreadPageOut)
+async def list_expert_chat_threads(
+        page: int = Query(1, ge=1),
+        page_size: int = Query(20, ge=1, le=100),
+        user: User = Depends(get_current_user),
+        session: AsyncSession = Depends(get_session),
+):
+    repo = MarketplaceRepository(session)
+    expert = await require_expert(user, repo)
+    items, total = await repo.list_expert_chat_threads(expert.id, page, page_size)
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.get("/chat/threads/{thread_id}/messages", response_model=ChatMessagePageOut)
+async def list_chat_messages(
+        thread_id: int,
+        page: int = Query(1, ge=1),
+        page_size: int = Query(50, ge=1, le=100),
+        user: User = Depends(get_current_user),
+        session: AsyncSession = Depends(get_session),
+):
+    result = await MarketplaceRepository(session).list_chat_messages_payload(thread_id, user.id, page, page_size)
+    if not result:
+        raise HTTPException(404, detail="会话不存在")
+    items, total = result
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.post("/chat/threads/{thread_id}/messages", response_model=ChatMessageOut)
+async def send_chat_message(thread_id: int, data: ChatMessageIn, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)):
+    message = await MarketplaceRepository(session).send_chat_message(thread_id, user.id, data.content)
+    if not message:
+        raise HTTPException(404, detail="会话不存在或已关闭")
+    return message
+
+
+@router.post("/chat/threads/{thread_id}/attachments", response_model=ChatAttachmentOut)
+async def upload_chat_attachment(
+        thread_id: int,
+        file: UploadFile = File(...),
+        user: User = Depends(get_current_user),
+        session: AsyncSession = Depends(get_session),
+):
+    repo = MarketplaceRepository(session)
+    if not await repo.get_chat_thread_for_user(thread_id, user.id):
+        raise HTTPException(404, detail="会话不存在")
+    content = await file.read()
+    if len(content) > MAX_CHAT_ATTACHMENT_SIZE:
+        raise HTTPException(413, detail="附件不能超过 10MB")
+    content_type = file.content_type or "application/octet-stream"
+    original_name = Path(file.filename or "attachment").name
+    suffix = Path(original_name).suffix[:20]
+    if content_type not in ALLOWED_CHAT_ATTACHMENT_TYPES and suffix.lower() not in ALLOWED_CHAT_ATTACHMENT_SUFFIXES:
+        raise HTTPException(400, detail="仅支持 PDF、TXT、Word 和常见图片格式")
+    stored_name = f"{uuid.uuid4().hex}{suffix}"
+    CHAT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    file_path = CHAT_UPLOAD_DIR / stored_name
+    file_path.write_bytes(content)
+    attachment = await repo.add_chat_attachment(thread_id, user.id, {
+        "file_name": original_name,
+        "file_url": f"/uploads/chat/{stored_name}",
+        "file_path": str(file_path),
+        "file_type": content_type,
+        "file_size": len(content),
+    })
+    if not attachment:
+        raise HTTPException(404, detail="会话不存在或已关闭")
+    return attachment
+
+
+@router.put("/chat/threads/{thread_id}/read", response_model=ChatThreadOut)
+async def mark_chat_read(thread_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)):
+    repo = MarketplaceRepository(session)
+    thread = await repo.mark_chat_thread_read(thread_id, user.id)
+    if not thread:
+        raise HTTPException(404, detail="会话不存在")
+    return await repo._chat_thread_payload(thread)
+
+
+@router.get("/expert/wallet", response_model=WalletOut)
+async def get_expert_wallet(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)):
+    repo = MarketplaceRepository(session)
+    expert = await require_expert(user, repo)
+    return await repo.get_wallet(expert.id)
+
+
+@router.get("/expert/wallet/transactions", response_model=WalletTransactionPageOut)
+async def list_expert_wallet_transactions(
+        page: int = Query(1, ge=1),
+        page_size: int = Query(20, ge=1, le=100),
+        user: User = Depends(get_current_user),
+        session: AsyncSession = Depends(get_session),
+):
+    repo = MarketplaceRepository(session)
+    expert = await require_expert(user, repo)
+    items, total = await repo.list_wallet_transactions(expert.id, page, page_size)
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.post("/expert/withdrawals", response_model=WithdrawalOut)
+async def create_expert_withdrawal(data: WithdrawalCreateIn, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)):
+    repo = MarketplaceRepository(session)
+    expert = await require_expert(user, repo)
+    withdrawal = await repo.create_withdrawal(expert.id, data.model_dump())
+    if not withdrawal:
+        raise HTTPException(400, detail="提现金额无效或余额不足")
+    return withdrawal
+
+
+@router.get("/expert/withdrawals", response_model=WithdrawalPageOut)
+async def list_expert_withdrawals(
+        page: int = Query(1, ge=1),
+        page_size: int = Query(20, ge=1, le=100),
+        user: User = Depends(get_current_user),
+        session: AsyncSession = Depends(get_session),
+):
+    repo = MarketplaceRepository(session)
+    expert = await require_expert(user, repo)
+    items, total = await repo.list_withdrawals(expert.id, page, page_size)
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 @router.post("/orders", response_model=ServiceOrderOut)

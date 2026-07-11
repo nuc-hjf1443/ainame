@@ -73,5 +73,5 @@ onLoad(query => {
 </script>
 
 <style scoped>
-.page{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40rpx;background:#f8fafc;box-sizing:border-box}.panel{width:min(680rpx,100%);background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:48rpx;text-align:center}.title{font-size:42rpx;font-weight:800;color:#111827}.copy{font-size:27rpx;color:#6b7280;line-height:1.7;margin:24rpx 0 36rpx}.primary,.secondary{height:88rpx;line-height:88rpx;border-radius:8px;font-size:28rpx;margin-top:18rpx}.primary{background:#4f46e5;color:#fff}.secondary{background:#fff;color:#374151;border:1px solid #d1d5db}
+.page{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40rpx;background:#f8f4ec;box-sizing:border-box}.panel{width:min(680rpx,100%);background:#fff;border:1px solid #e7e0d4;border-radius:8px;padding:48rpx;text-align:center}.title{font-size:42rpx;font-weight:800;color:#17243b}.copy{font-size:27rpx;color:#667085;line-height:1.7;margin:24rpx 0 36rpx}.primary,.secondary{height:88rpx;line-height:88rpx;border-radius:8px;font-size:28rpx;margin-top:18rpx}.primary{background:#24324a;color:#f5d392}.secondary{background:#fff;color:#17243b;border:1px solid #e7e0d4}
 </style>
